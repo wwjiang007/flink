@@ -1,6 +1,6 @@
 ---
 title: "Data Types"
-weight: 1
+weight: 25
 type: docs
 aliases:
   - /zh/dev/python/datastream-api-users-guide/data_types.html
@@ -27,10 +27,7 @@ under the License.
 # Data Types
 
 In Apache Flink's Python DataStream API, a data type describes the type of a value in the DataStream ecosystem. 
-It can be used to declare input and output types of operations and informs the system how to serailize elements. 
-
-
-
+It can be used to declare input and output types of operations and informs the system how to serailize elements.
 
 ## Pickle Serialization
 
@@ -77,7 +74,7 @@ def streaming_file_sink():
     env.set_parallelism(1)
     env.from_collection(collection=[(1, 'aaa'), (2, 'bbb')]) \
         .map(lambda record: (record[0]+1, record[1].upper()),
-             result_type=Types.ROW([Types.INT(), Types.STRING()])) \
+             output_type=Types.ROW([Types.INT(), Types.STRING()])) \
         .add_sink(StreamingFileSink
                   .for_row_format('/tmp/output', SimpleStringEncoder())
                   .build())

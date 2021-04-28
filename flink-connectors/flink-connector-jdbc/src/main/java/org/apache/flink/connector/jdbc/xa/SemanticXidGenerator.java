@@ -20,11 +20,11 @@ package org.apache.flink.connector.jdbc.xa;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.functions.RuntimeContext;
-import org.apache.flink.util.AbstractID;
 
 import javax.transaction.xa.Xid;
 
 import java.security.SecureRandom;
+import java.util.Arrays;
 
 /**
  * Generates {@link Xid} from:
@@ -63,17 +63,36 @@ class SemanticXidGenerator implements XidGenerator {
 
     @Override
     public Xid generateXid(RuntimeContext runtimeContext, long checkpointId) {
-        byte[] jobIdOrRandomBytes =
-                runtimeContext
-                        .getJobId()
-                        .map(AbstractID::getBytes)
-                        .orElse(getRandomBytes(JobID.SIZE));
-        System.arraycopy(jobIdOrRandomBytes, 0, gtridBuffer, 0, JobID.SIZE);
+        byte[] jobIdBytes = runtimeContext.getJobId().getBytes();
+        System.arraycopy(jobIdBytes, 0, gtridBuffer, 0, JobID.SIZE);
 
         writeNumber(runtimeContext.getIndexOfThisSubtask(), Integer.BYTES, gtridBuffer, JobID.SIZE);
         writeNumber(checkpointId, Long.BYTES, gtridBuffer, JobID.SIZE + Integer.BYTES);
         // relying on arrays copying inside XidImpl constructor
         return new XidImpl(FORMAT_ID, gtridBuffer, bqualBuffer);
+    }
+
+    @Override
+    public boolean belongsToSubtask(Xid xid, RuntimeContext ctx) {
+        if (xid.getFormatId() != FORMAT_ID) {
+            return false;
+        }
+        int subtaskIndex = readNumber(xid.getGlobalTransactionId(), JobID.SIZE, Integer.BYTES);
+        if (subtaskIndex != ctx.getIndexOfThisSubtask()
+                && subtaskIndex <= ctx.getNumberOfParallelSubtasks() - 1) {
+            return false;
+        }
+        byte[] jobIdBytes = new byte[JobID.SIZE];
+        System.arraycopy(xid.getGlobalTransactionId(), 0, jobIdBytes, 0, JobID.SIZE);
+        return Arrays.equals(jobIdBytes, ctx.getJobId().getBytes());
+    }
+
+    private static int readNumber(byte[] bytes, int offset, int numBytes) {
+        int result = 0;
+        for (int i = 0; i < numBytes; i++) {
+            result |= (bytes[offset + i] & 0xff) << Byte.SIZE * i;
+        }
+        return result;
     }
 
     private static void writeNumber(long number, int numBytes, byte[] dst, int dstOffset) {

@@ -29,7 +29,6 @@ import org.apache.flink.configuration.WebOptions;
 import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration;
 import org.apache.flink.table.api.TableResult;
 import org.apache.flink.table.client.config.Environment;
-import org.apache.flink.table.client.config.entries.ExecutionEntry;
 import org.apache.flink.table.client.gateway.Executor;
 import org.apache.flink.table.client.gateway.ResultDescriptor;
 import org.apache.flink.table.client.gateway.TypedResult;
@@ -38,6 +37,8 @@ import org.apache.flink.table.client.gateway.utils.EnvironmentFileUtil;
 import org.apache.flink.table.client.gateway.utils.SimpleCatalogFactory;
 import org.apache.flink.table.client.gateway.utils.TestUserClassLoaderJar;
 import org.apache.flink.table.functions.ScalarFunction;
+import org.apache.flink.table.operations.Operation;
+import org.apache.flink.table.operations.QueryOperation;
 import org.apache.flink.table.planner.factories.utils.TestCollectionTableFactory;
 import org.apache.flink.test.util.MiniClusterWithClientResource;
 import org.apache.flink.test.util.TestBaseUtils;
@@ -50,10 +51,6 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameter;
-import org.junit.runners.Parameterized.Parameters;
 
 import java.io.File;
 import java.io.IOException;
@@ -75,15 +72,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /** Contains basic tests for the {@link LocalExecutor}. */
-@RunWith(Parameterized.class)
 public class LocalExecutorITCase extends TestLogger {
-
-    @Parameters(name = "Planner: {0}")
-    public static List<String> planner() {
-        return Arrays.asList(
-                ExecutionEntry.EXECUTION_PLANNER_VALUE_OLD,
-                ExecutionEntry.EXECUTION_PLANNER_VALUE_BLINK);
-    }
 
     private static final String DEFAULTS_ENVIRONMENT_FILE = "test-sql-client-defaults.yaml";
 
@@ -124,7 +113,7 @@ public class LocalExecutorITCase extends TestLogger {
         return config;
     }
 
-    @Parameter public String planner;
+    private static final String PLANNER = "blink";
 
     @Rule public ExpectedException exception = ExpectedException.none();
 
@@ -160,7 +149,7 @@ public class LocalExecutorITCase extends TestLogger {
         final URL url = getClass().getClassLoader().getResource("test-data.csv");
         Objects.requireNonNull(url);
         final Map<String, String> replaceVars = new HashMap<>();
-        replaceVars.put("$VAR_PLANNER", planner);
+        replaceVars.put("$VAR_PLANNER", PLANNER);
         replaceVars.put("$VAR_SOURCE_PATH1", url.getPath());
         replaceVars.put("$VAR_EXECUTION_TYPE", "streaming");
         replaceVars.put("$VAR_RESULT_MODE", "changelog");
@@ -175,7 +164,8 @@ public class LocalExecutorITCase extends TestLogger {
         try {
             // start job and retrieval
             final ResultDescriptor desc =
-                    executor.executeQuery(
+                    executeQuery(
+                            executor,
                             sessionId,
                             "SELECT scalarUDF(IntegerField1), StringField1, 'ABC' FROM TableNumber1");
 
@@ -204,7 +194,7 @@ public class LocalExecutorITCase extends TestLogger {
         final URL url = getClass().getClassLoader().getResource("test-data.csv");
         Objects.requireNonNull(url);
         final Map<String, String> replaceVars = new HashMap<>();
-        replaceVars.put("$VAR_PLANNER", planner);
+        replaceVars.put("$VAR_PLANNER", PLANNER);
         replaceVars.put("$VAR_SOURCE_PATH1", url.getPath());
         replaceVars.put("$VAR_EXECUTION_TYPE", "streaming");
         replaceVars.put("$VAR_RESULT_MODE", "changelog");
@@ -228,7 +218,8 @@ public class LocalExecutorITCase extends TestLogger {
             for (int i = 0; i < 3; i++) {
                 // start job and retrieval
                 final ResultDescriptor desc =
-                        executor.executeQuery(
+                        executeQuery(
+                                executor,
                                 sessionId,
                                 "SELECT scalarUDF(IntegerField1), StringField1 FROM TableNumber1");
 
@@ -251,7 +242,7 @@ public class LocalExecutorITCase extends TestLogger {
         Objects.requireNonNull(url);
 
         final Map<String, String> replaceVars = new HashMap<>();
-        replaceVars.put("$VAR_PLANNER", planner);
+        replaceVars.put("$VAR_PLANNER", PLANNER);
         replaceVars.put("$VAR_SOURCE_PATH1", url.getPath());
         replaceVars.put("$VAR_EXECUTION_TYPE", "streaming");
         replaceVars.put("$VAR_RESULT_MODE", "table");
@@ -278,7 +269,7 @@ public class LocalExecutorITCase extends TestLogger {
         Objects.requireNonNull(url);
 
         final Map<String, String> replaceVars = new HashMap<>();
-        replaceVars.put("$VAR_PLANNER", planner);
+        replaceVars.put("$VAR_PLANNER", PLANNER);
         replaceVars.put("$VAR_SOURCE_PATH1", url.getPath());
         replaceVars.put("$VAR_EXECUTION_TYPE", "streaming");
         replaceVars.put("$VAR_RESULT_MODE", "table");
@@ -315,7 +306,7 @@ public class LocalExecutorITCase extends TestLogger {
         Objects.requireNonNull(url);
 
         final Map<String, String> replaceVars = new HashMap<>();
-        replaceVars.put("$VAR_PLANNER", planner);
+        replaceVars.put("$VAR_PLANNER", PLANNER);
         replaceVars.put("$VAR_SOURCE_PATH1", url.getPath());
         replaceVars.put("$VAR_EXECUTION_TYPE", "streaming");
         replaceVars.put("$VAR_RESULT_MODE", "table");
@@ -336,7 +327,7 @@ public class LocalExecutorITCase extends TestLogger {
         final URL url = getClass().getClassLoader().getResource("test-data.csv");
         Objects.requireNonNull(url);
         final Map<String, String> replaceVars = new HashMap<>();
-        replaceVars.put("$VAR_PLANNER", planner);
+        replaceVars.put("$VAR_PLANNER", PLANNER);
         replaceVars.put("$VAR_SOURCE_PATH1", url.getPath());
         replaceVars.put("$VAR_EXECUTION_TYPE", "batch");
         replaceVars.put("$VAR_RESULT_MODE", "table");
@@ -350,7 +341,7 @@ public class LocalExecutorITCase extends TestLogger {
 
         try {
             final ResultDescriptor desc =
-                    executor.executeQuery(sessionId, "SELECT *, 'ABC' FROM TestView1");
+                    executeQuery(executor, sessionId, "SELECT *, 'ABC' FROM TestView1");
 
             assertTrue(desc.isMaterialized());
 
@@ -377,7 +368,7 @@ public class LocalExecutorITCase extends TestLogger {
         final URL url = getClass().getClassLoader().getResource("test-data.csv");
         Objects.requireNonNull(url);
         final Map<String, String> replaceVars = new HashMap<>();
-        replaceVars.put("$VAR_PLANNER", planner);
+        replaceVars.put("$VAR_PLANNER", PLANNER);
         replaceVars.put("$VAR_SOURCE_PATH1", url.getPath());
         replaceVars.put("$VAR_EXECUTION_TYPE", "batch");
         replaceVars.put("$VAR_RESULT_MODE", "table");
@@ -401,7 +392,7 @@ public class LocalExecutorITCase extends TestLogger {
         try {
             for (int i = 0; i < 3; i++) {
                 final ResultDescriptor desc =
-                        executor.executeQuery(sessionId, "SELECT * FROM TestView1");
+                        executeQuery(executor, sessionId, "SELECT * FROM TestView1");
 
                 assertTrue(desc.isMaterialized());
 
@@ -425,12 +416,13 @@ public class LocalExecutorITCase extends TestLogger {
         final URL url = getClass().getClassLoader().getResource("test-data.csv");
         Objects.requireNonNull(url);
         final Map<String, String> replaceVars = new HashMap<>();
-        replaceVars.put("$VAR_PLANNER", planner);
+        replaceVars.put("$VAR_PLANNER", PLANNER);
         replaceVars.put("$VAR_SOURCE_PATH1", url.getPath());
         replaceVars.put("$VAR_EXECUTION_TYPE", "streaming");
         replaceVars.put("$VAR_SOURCE_SINK_PATH", csvOutputPath);
         replaceVars.put("$VAR_UPDATE_MODE", "update-mode: append");
         replaceVars.put("$VAR_MAX_ROWS", "100");
+        replaceVars.put("$VAR_RESULT_MODE", "table");
 
         final Executor executor =
                 createLocalExecutor(createModifiedEnvironment(replaceVars), udfDependency);
@@ -438,7 +430,7 @@ public class LocalExecutorITCase extends TestLogger {
         assertEquals("test-session", sessionId);
 
         try {
-            executor.executeSql(sessionId, "CREATE FUNCTION LowerUDF AS 'LowerUDF'");
+            executeSql(executor, sessionId, "CREATE FUNCTION LowerUDF AS 'LowerUDF'");
             // Case 1: Registered sink
             // Case 1.1: Registered sink with uppercase insert into keyword.
             // FLINK-18302: wrong classloader when INSERT INTO with UDF
@@ -456,17 +448,18 @@ public class LocalExecutorITCase extends TestLogger {
             executeAndVerifySinkResult(executor, sessionId, statement2, csvOutputPath);
 
             // Case 2: Temporary sink
-            executor.executeSql(sessionId, "use catalog `simple-catalog`");
-            executor.executeSql(sessionId, "use default_database");
+            executeSql(executor, sessionId, "use catalog `simple-catalog`");
+            executeSql(executor, sessionId, "use default_database");
             // create temporary sink
-            executor.executeSql(
+            executeSql(
+                    executor,
                     sessionId,
                     "CREATE TEMPORARY TABLE MySink (id int, str VARCHAR) WITH ('connector' = 'COLLECTION')");
             final String statement3 = "INSERT INTO MySink select * from `test-table`";
 
             // all queries are pipelined to an in-memory sink, check it is properly registered
             final ResultDescriptor otherCatalogDesc =
-                    executor.executeQuery(sessionId, "SELECT * FROM `test-table`");
+                    executeQuery(executor, sessionId, "SELECT * FROM `test-table`");
 
             final List<String> otherCatalogResults =
                     retrieveTableResult(executor, sessionId, otherCatalogDesc.getResultId());
@@ -486,6 +479,16 @@ public class LocalExecutorITCase extends TestLogger {
     // --------------------------------------------------------------------------------------------
     // Helper method
     // --------------------------------------------------------------------------------------------
+
+    private TableResult executeSql(Executor executor, String sessionId, String sql) {
+        Operation operation = executor.parseStatement(sessionId, sql);
+        return executor.executeOperation(sessionId, operation);
+    }
+
+    private ResultDescriptor executeQuery(Executor executor, String sessionId, String query) {
+        Operation operation = executor.parseStatement(sessionId, query);
+        return executor.executeQuery(sessionId, (QueryOperation) operation);
+    }
 
     private LocalExecutor createLocalExecutor(Environment environment, List<URL> dependencies) {
 
@@ -511,7 +514,7 @@ public class LocalExecutorITCase extends TestLogger {
 
         try {
             // start job and retrieval
-            final ResultDescriptor desc = executor.executeQuery(sessionId, query);
+            final ResultDescriptor desc = executeQuery(executor, sessionId, query);
 
             assertTrue(desc.isMaterialized());
 
@@ -542,7 +545,7 @@ public class LocalExecutorITCase extends TestLogger {
     private void executeAndVerifySinkResult(
             Executor executor, String sessionId, String statement, String resultPath)
             throws Exception {
-        final TableResult tableResult = executor.executeSql(sessionId, statement);
+        final TableResult tableResult = executeSql(executor, sessionId, statement);
         checkState(tableResult.getJobClient().isPresent());
         // wait for job completion
         tableResult.await();
@@ -552,7 +555,7 @@ public class LocalExecutorITCase extends TestLogger {
 
     private Environment createDefaultEnvironment() throws Exception {
         final Map<String, String> replaceVars = new HashMap<>();
-        replaceVars.put("$VAR_PLANNER", planner);
+        replaceVars.put("$VAR_PLANNER", PLANNER);
         replaceVars.put("$VAR_EXECUTION_TYPE", "batch");
         replaceVars.put("$VAR_UPDATE_MODE", "");
         replaceVars.put("$VAR_MAX_ROWS", "100");
@@ -564,12 +567,6 @@ public class LocalExecutorITCase extends TestLogger {
             throws Exception {
         replaceVars.putIfAbsent("$VAR_RESTART_STRATEGY_TYPE", "failure-rate");
         return EnvironmentFileUtil.parseModified(DEFAULTS_ENVIRONMENT_FILE, replaceVars);
-    }
-
-    private Environment createModifiedEnvironment(String yamlFile, Map<String, String> replaceVars)
-            throws Exception {
-        replaceVars.putIfAbsent("$VAR_RESTART_STRATEGY_TYPE", "failure-rate");
-        return EnvironmentFileUtil.parseModified(yamlFile, replaceVars);
     }
 
     private List<String> retrieveTableResult(Executor executor, String sessionId, String resultID)

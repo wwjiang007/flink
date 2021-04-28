@@ -884,7 +884,10 @@ public class CheckpointCoordinator {
                     abortPendingCheckpoint(checkpoint, cause);
                 }
             } else {
-                LOG.warn("Failed to trigger checkpoint for job {}.)", job, throwable);
+                LOG.info(
+                        "Failed to trigger checkpoint for job {} since {}",
+                        job,
+                        throwable.getMessage());
             }
         } finally {
             isTriggering = false;
@@ -1725,6 +1728,9 @@ public class CheckpointCoordinator {
             if (shutdown) {
                 throw new IllegalArgumentException("Checkpoint coordinator is shut down");
             }
+            Preconditions.checkState(
+                    isPeriodicCheckpointingConfigured(),
+                    "Can not start checkpoint scheduler, if no periodic checkpointing is configured");
 
             // make sure all prior timers are cancelled
             stopCheckpointScheduler();
@@ -1746,6 +1752,10 @@ public class CheckpointCoordinator {
 
             numUnsuccessfulCheckpointsTriggers.set(0);
         }
+    }
+
+    public boolean isPeriodicCheckpointingStarted() {
+        return periodicScheduling;
     }
 
     /**

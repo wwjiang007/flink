@@ -44,14 +44,14 @@ from pyflink.testing.test_case_utils import PyFlinkOldStreamTableTestCase, \
     PyFlinkOldBatchTableTestCase, PyFlinkBlinkBatchTableTestCase, PyFlinkBlinkStreamTableTestCase, \
     PyFlinkLegacyBlinkBatchTableTestCase, PyFlinkLegacyFlinkStreamTableTestCase, \
     PyFlinkLegacyBlinkStreamTableTestCase, _load_specific_flink_module_jars
-from pyflink.util.utils import get_j_env_configuration
+from pyflink.util.java_utils import get_j_env_configuration
 
 
 class TableEnvironmentTest(object):
 
     def test_set_sys_executable_for_local_mode(self):
         jvm = get_gateway().jvm
-        actual_executable = get_j_env_configuration(self.t_env) \
+        actual_executable = get_j_env_configuration(self.t_env._get_j_env()) \
             .getString(jvm.PythonOptions.PYTHON_EXECUTABLE.key(), None)
         self.assertEqual(sys.executable, actual_executable)
 

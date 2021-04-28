@@ -37,7 +37,7 @@ import org.apache.flink.table.client.gateway.SqlExecutionException;
 import org.apache.flink.table.descriptors.CoreModuleDescriptorValidator;
 import org.apache.flink.table.factories.BatchTableSinkFactory;
 import org.apache.flink.table.factories.BatchTableSourceFactory;
-import org.apache.flink.table.factories.CatalogFactory;
+import org.apache.flink.table.factories.FactoryUtil;
 import org.apache.flink.table.factories.ModuleFactory;
 import org.apache.flink.table.factories.TableFactoryService;
 import org.apache.flink.table.factories.TableSinkFactory;
@@ -67,8 +67,10 @@ import static org.apache.flink.table.api.Expressions.$;
 /**
  * Utils to initialize {@link TableEnvironment} from {@link Environment}.
  *
- * <p>It will be removed when sql-client.yaml is deprecated.
+ * @deprecated This will be dropped in Flink 1.14 with dropping support of {@code sql-client.yaml}
+ *     configuration file.
  */
+@Deprecated
 public class LegacyTableEnvironmentInitializer {
 
     public static void initializeSessionState(
@@ -114,7 +116,8 @@ public class LegacyTableEnvironmentInitializer {
                     .getCatalogs()
                     .forEach(
                             (name, entry) -> {
-                                Catalog catalog = createCatalog(name, entry.asMap(), classLoader);
+                                Catalog catalog =
+                                        createCatalog(tableEnv, name, entry.asMap(), classLoader);
                                 tableEnv.registerCatalog(name, catalog);
                             });
         }
@@ -207,10 +210,15 @@ public class LegacyTableEnvironmentInitializer {
     }
 
     private static Catalog createCatalog(
-            String name, Map<String, String> catalogProperties, ClassLoader classLoader) {
-        final CatalogFactory factory =
-                TableFactoryService.find(CatalogFactory.class, catalogProperties, classLoader);
-        return factory.createCatalog(name, catalogProperties);
+            TableEnvironment tableEnv,
+            String catalogName,
+            Map<String, String> catalogProperties,
+            ClassLoader classLoader) {
+        return FactoryUtil.createCatalog(
+                catalogName,
+                catalogProperties,
+                tableEnv.getConfig().getConfiguration(),
+                classLoader);
     }
 
     private static TableSource<?> createTableSource(

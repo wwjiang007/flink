@@ -49,6 +49,7 @@ import org.apache.flink.runtime.state.StateSnapshotTransformer;
 import org.apache.flink.runtime.state.TestableKeyedStateBackend;
 import org.apache.flink.runtime.state.heap.HeapPriorityQueueElement;
 import org.apache.flink.runtime.state.internal.InternalKvState;
+import org.apache.flink.runtime.state.metrics.LatencyTrackingStateFactory;
 import org.apache.flink.runtime.state.ttl.TtlStateFactory;
 import org.apache.flink.runtime.state.ttl.TtlTimeProvider;
 import org.apache.flink.util.FlinkRuntimeException;
@@ -247,7 +248,8 @@ class ChangelogKeyedStateBackend<K>
             KeyGroupedInternalPriorityQueue<T> create(
                     @Nonnull String stateName,
                     @Nonnull TypeSerializer<T> byteOrderedElementSerializer) {
-        return keyedStateBackend.create(stateName, byteOrderedElementSerializer);
+        return new ChangelogKeyGroupedPriorityQueue<T>(
+                keyedStateBackend.create(stateName, byteOrderedElementSerializer));
     }
 
     @VisibleForTesting
@@ -296,8 +298,11 @@ class ChangelogKeyedStateBackend<K>
                 stateDescriptor.initializeSerializerUnlessSet(executionConfig);
             }
             kvState =
-                    TtlStateFactory.createStateAndWrapWithTtlIfEnabled(
-                            namespaceSerializer, stateDescriptor, this, ttlTimeProvider);
+                    LatencyTrackingStateFactory.createStateAndWrapWithLatencyTrackingIfEnabled(
+                            TtlStateFactory.createStateAndWrapWithTtlIfEnabled(
+                                    namespaceSerializer, stateDescriptor, this, ttlTimeProvider),
+                            stateDescriptor,
+                            keyedStateBackend.getLatencyTrackingStateConfig());
             keyValueStatesByName.put(stateDescriptor.getName(), kvState);
             keyedStateBackend.publishQueryableStateIfEnabled(stateDescriptor, kvState);
         }

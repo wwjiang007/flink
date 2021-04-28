@@ -90,7 +90,7 @@ class WindowTableFunctionTest extends TableTestBase {
     util.tableEnv.executeSql(
       """
         |CREATE VIEW v1 AS
-        |SELECT *, CURRENT_TIMESTAMP AS cur_time
+        |SELECT *, LOCALTIMESTAMP AS cur_time
         |FROM MyTable
         |""".stripMargin)
     val sql =
@@ -99,7 +99,7 @@ class WindowTableFunctionTest extends TableTestBase {
         |FROM TABLE(
         | TUMBLE(TABLE v1, DESCRIPTOR(cur_time), INTERVAL '15' MINUTE))
         |""".stripMargin
-    thrown.expectMessage("requires the timecol is a time attribute type, but is TIMESTAMP(0)")
+    thrown.expectMessage("requires the timecol is a time attribute type, but is TIMESTAMP(3)")
     thrown.expect(classOf[ValidationException])
     util.verifyRelPlan(sql)
   }

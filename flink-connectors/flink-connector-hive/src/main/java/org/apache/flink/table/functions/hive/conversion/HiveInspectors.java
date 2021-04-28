@@ -152,7 +152,8 @@ public class HiveInspectors {
                     || inspector instanceof LongObjectInspector
                     || inspector instanceof FloatObjectInspector
                     || inspector instanceof DoubleObjectInspector
-                    || inspector instanceof BinaryObjectInspector) {
+                    || inspector instanceof BinaryObjectInspector
+                    || inspector instanceof VoidObjectInspector) {
                 conversion = IdentityConversion.INSTANCE;
             } else if (inspector instanceof DateObjectInspector) {
                 conversion = hiveShim::toHiveDate;
@@ -375,6 +376,11 @@ public class HiveInspectors {
 
     /** Get Hive {@link ObjectInspector} for a Flink {@link DataType}. */
     public static ObjectInspector getObjectInspector(DataType flinkType) {
+        return getObjectInspector(flinkType.getLogicalType());
+    }
+
+    /** Get Hive {@link ObjectInspector} for a Flink {@link LogicalType}. */
+    public static ObjectInspector getObjectInspector(LogicalType flinkType) {
         return getObjectInspector(HiveTypeUtil.toHiveTypeInfo(flinkType, true));
     }
 
@@ -462,7 +468,7 @@ public class HiveInspectors {
         }
     }
 
-    private static ObjectInspector getObjectInspector(TypeInfo type) {
+    public static ObjectInspector getObjectInspector(TypeInfo type) {
         switch (type.getCategory()) {
             case PRIMITIVE:
                 PrimitiveTypeInfo primitiveType = (PrimitiveTypeInfo) type;

@@ -28,12 +28,10 @@ import org.apache.flink.runtime.jobgraph.JobGraphTestUtils;
 import org.apache.flink.runtime.jobgraph.JobVertex;
 import org.apache.flink.runtime.minicluster.MiniCluster;
 import org.apache.flink.runtime.testutils.CancelableInvokable;
-import org.apache.flink.testutils.junit.FailsWithAdaptiveScheduler;
 import org.apache.flink.util.TestLogger;
 
 import org.junit.After;
 import org.junit.Test;
-import org.junit.experimental.categories.Category;
 
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -97,7 +95,6 @@ public class PerJobMiniClusterFactoryTest extends TestLogger {
     }
 
     @Test
-    @Category(FailsWithAdaptiveScheduler.class) // FLINK-21333
     public void testJobClientSavepoint() throws Exception {
         PerJobMiniClusterFactory perJobMiniClusterFactory = initializeMiniCluster();
         JobClient jobClient =
@@ -114,23 +111,6 @@ public class PerJobMiniClusterFactoryTest extends TestLogger {
                 "is not a streaming job.",
                 ExecutionException.class,
                 () -> jobClient.stopWithSavepoint(true, null).get());
-    }
-
-    @Test
-    public void testSubmissionError() throws Exception {
-        PerJobMiniClusterFactory perJobMiniClusterFactory = initializeMiniCluster();
-
-        // JobGraph is not a valid job
-
-        JobGraph jobGraph = JobGraphTestUtils.emptyJobGraph();
-
-        assertThrows(
-                "Could not instantiate JobManager",
-                ExecutionException.class,
-                () ->
-                        perJobMiniClusterFactory
-                                .submitJob(jobGraph, ClassLoader.getSystemClassLoader())
-                                .get());
     }
 
     @Test
@@ -190,6 +170,7 @@ public class PerJobMiniClusterFactoryTest extends TestLogger {
     private static JobGraph getCancellableJobGraph() {
         JobVertex jobVertex = new JobVertex("jobVertex");
         jobVertex.setInvokableClass(MyCancellableInvokable.class);
+        jobVertex.setParallelism(1);
         return JobGraphTestUtils.streamingJobGraph(jobVertex);
     }
 

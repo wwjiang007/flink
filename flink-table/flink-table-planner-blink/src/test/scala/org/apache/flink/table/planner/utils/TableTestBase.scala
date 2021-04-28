@@ -48,6 +48,7 @@ import org.apache.flink.table.planner.delegation.PlannerBase
 import org.apache.flink.table.planner.functions.sql.FlinkSqlOperatorTable
 import org.apache.flink.table.planner.operations.{DataStreamQueryOperation, PlannerQueryOperation, RichTableSourceQueryOperation}
 import org.apache.flink.table.planner.plan.nodes.calcite.LogicalWatermarkAssigner
+import org.apache.flink.table.planner.plan.nodes.exec.ExecNodeBase
 import org.apache.flink.table.planner.plan.nodes.exec.utils.ExecNodePlanDumper
 import org.apache.flink.table.planner.plan.optimize.program._
 import org.apache.flink.table.planner.plan.stats.FlinkStatistic
@@ -213,7 +214,8 @@ abstract class TableTestUtilBase(test: TableTestBase, isStreamingMode: Boolean) 
       val names = FieldInfoUtils.getFieldNames(typeInfo)
       TableSchema.builder().fields(names, types).build()
     } else {
-      FieldInfoUtils.getFieldsInfo(typeInfo, fields.toArray).toTableSchema
+      TableSchema.fromResolvedSchema(
+        FieldInfoUtils.getFieldsInfo(typeInfo, fields.toArray).toResolvedSchema)
     }
 
     addTableSource(name, new TestTableSource(isBounded, tableSchema))
@@ -737,6 +739,7 @@ abstract class TableTestUtilBase(test: TableTestBase, isStreamingMode: Boolean) 
    * Verify the json plan for the given insert statement.
    */
   def verifyJsonPlan(insert: String): Unit = {
+    ExecNodeBase.resetIdCounter()
     val jsonPlan = getTableEnv.asInstanceOf[TableEnvironmentInternal].getJsonPlan(insert)
     val jsonPlanWithoutFlinkVersion = TableTestUtil.replaceFlinkVersion(jsonPlan)
     // add the postfix to the path to avoid conflicts
@@ -1613,7 +1616,7 @@ object TableTestUtil {
       ObjectIdentifier.of(tEnv.getCurrentCatalog, tEnv.getCurrentDatabase, name),
       dataStream,
       typeInfoSchema.getIndices,
-      typeInfoSchema.toTableSchema,
+      typeInfoSchema.toResolvedSchema,
       fieldNullables.getOrElse(Array.fill(fieldCnt)(true)),
       statistic.getOrElse(FlinkStatistic.UNKNOWN)
     )
@@ -1646,8 +1649,17 @@ object TableTestUtil {
     str
   }
 
-  def readFromResourceAndRemoveLastLinkBreak(path: String): String = {
-    readFromResource(path).stripSuffix("\n")
+  def readFromFile(path: String): Seq[String] = {
+    val file = new File(path)
+    if (file.isDirectory) {
+      file.listFiles().foldLeft(Seq.empty[String]) {
+        (lines, p) => lines ++ readFromFile(p.getAbsolutePath)
+      }
+    } else if (file.isHidden) {
+      Seq.empty[String]
+    } else {
+      Files.readAllLines(Paths.get(file.toURI)).toSeq
+    }
   }
 
   @throws[IOException]

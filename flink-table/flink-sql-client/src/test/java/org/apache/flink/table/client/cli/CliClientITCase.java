@@ -36,6 +36,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.jline.reader.MaskingCallback;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.impl.DumbTerminal;
+import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
 import org.junit.Test;
@@ -56,10 +57,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+import static org.apache.flink.configuration.JobManagerOptions.ADDRESS;
+import static org.apache.flink.configuration.RestOptions.PORT;
 import static org.apache.flink.table.client.cli.utils.SqlScriptReader.parseSqlScript;
 import static org.junit.Assert.assertEquals;
 
@@ -70,6 +76,7 @@ public class CliClientITCase extends AbstractTestBase {
     // a generated UDF jar used for testing classloading of dependencies
     private static URL udfDependency;
     private static Path historyPath;
+    private static Map<String, String> replaceVars;
 
     @ClassRule public static TemporaryFolder tempFolder = new TemporaryFolder();
 
@@ -97,12 +104,27 @@ public class CliClientITCase extends AbstractTestBase {
                         tempFolder.newFolder("test-jar"), "test-classloader-udf.jar");
         udfDependency = udfJar.toURI().toURL();
         historyPath = tempFolder.newFile("history").toPath();
+
+        replaceVars = new HashMap<>();
+        replaceVars.put("$VAR_PIPELINE_JARS", udfDependency.toString());
+        replaceVars.put(
+                "$VAR_REST_PORT",
+                miniClusterResource.getClientConfiguration().get(PORT).toString());
+        replaceVars.put(
+                "$VAR_JOBMANAGER_RPC_ADDRESS",
+                miniClusterResource.getClientConfiguration().get(ADDRESS));
+    }
+
+    @Before
+    public void before() throws IOException {
+        // initialize new folders for every tests, so the vars can be reused by every SQL scripts
+        replaceVars.put("$VAR_STREAMING_PATH", tempFolder.newFolder().toPath().toString());
+        replaceVars.put("$VAR_BATCH_PATH", tempFolder.newFolder().toPath().toString());
     }
 
     @Test
     public void testSqlStatements() throws IOException {
-        URL url = CliClientITCase.class.getResource("/" + sqlPath);
-        String in = IOUtils.toString(url, StandardCharsets.UTF_8);
+        String in = getInputFromPath(sqlPath);
         List<TestSqlStatement> testSqlStatements = parseSqlScript(in);
         List<String> sqlStatements =
                 testSqlStatements.stream().map(s -> s.sql).collect(Collectors.toList());
@@ -134,12 +156,12 @@ public class CliClientITCase extends AbstractTestBase {
         try (Terminal terminal = new DumbTerminal(inputStream, outputStream);
                 CliClient client =
                         new CliClient(
-                                terminal,
+                                () -> terminal,
                                 sessionId,
                                 executor,
                                 historyPath,
                                 HideSqlStatement.INSTANCE)) {
-            client.open();
+            client.executeInInteractiveMode();
             String output = new String(outputStream.toByteArray());
             return normalizeOutput(output);
         }
@@ -150,10 +172,65 @@ public class CliClientITCase extends AbstractTestBase {
     // -------------------------------------------------------------------------------------------
 
     private static final String PROMOTE = "Flink SQL> ";
-    private static final String INFO_BEGIN = "\u001B[34;1m";
-    private static final String INFO_END = "\u001B[0m";
-    private static final String ERROR_BEGIN = "\u001B[31;1m";
-    private static final String ERROR_END = "\u001B[0m";
+    private static final String JOB_ID = "Job ID:";
+
+    enum Tag {
+        ERROR("\u001B[31;1m", "\u001B[0m", "!error"),
+
+        WARNING("\u001B[33;1m", "\u001B[0m", "!warning"),
+
+        INFO("\u001B[34;1m", "\u001B[0m", "!info"),
+
+        OK("", "", "!ok");
+
+        public final String begin;
+        public final String end;
+        public final String tag;
+
+        Tag(String begin, String end, String tag) {
+            this.begin = begin;
+            this.end = end;
+            this.tag = tag;
+        }
+
+        public boolean matches(List<String> lines) {
+            return containsTag(lines, begin) && containsTag(lines, end);
+        }
+
+        public List<String> convert(List<String> lines) {
+            List<String> newLines = new ArrayList<>();
+            for (String line : lines) {
+                String newLine =
+                        StringUtils.replaceEach(
+                                line, new String[] {begin, end}, new String[] {"", ""});
+
+                // there might be trailing white spaces,
+                // we should remove them because we don't compare trailing white spaces
+                newLines.add(StringUtils.stripEnd(newLine, " "));
+            }
+            return newLines;
+        }
+
+        private boolean containsTag(List<String> contents, String tag) {
+            for (String content : contents) {
+                if (content.contains(tag)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static String getInputFromPath(String sqlPath) throws IOException {
+        URL url = CliClientITCase.class.getResource("/" + sqlPath);
+        String in = IOUtils.toString(url, StandardCharsets.UTF_8);
+
+        // replace the placeholder with specified value if exists
+        String[] keys = replaceVars.keySet().toArray(new String[0]);
+        String[] values = Arrays.stream(keys).map(replaceVars::get).toArray(String[]::new);
+
+        return StringUtils.replaceEach(in, keys, values);
+    }
 
     private static List<Result> normalizeOutput(String output) {
         List<Result> results = new ArrayList<>();
@@ -177,7 +254,12 @@ public class CliClientITCase extends AbstractTestBase {
                     // remove the promote prefix
                     line = line.substring(PROMOTE.length());
                 }
-                contentLines.add(line);
+                // ignore the line begin with Job ID:
+                if (!line.startsWith(JOB_ID)) {
+                    contentLines.add(line);
+                } else {
+                    contentLines.add(JOB_ID);
+                }
             }
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -193,35 +275,22 @@ public class CliClientITCase extends AbstractTestBase {
     }
 
     private static Result convertToResult(List<String> contentLines) {
-        if (containsTag(contentLines, INFO_BEGIN) && containsTag(contentLines, INFO_END)) {
-            return new Result(stripTagsAndConcatLines(contentLines, INFO_BEGIN, INFO_END), "!info");
-        } else if (containsTag(contentLines, ERROR_BEGIN) && containsTag(contentLines, ERROR_END)) {
-            return new Result(
-                    stripTagsAndConcatLines(contentLines, ERROR_BEGIN, ERROR_END), "!error");
-        } else {
-            return new Result(stripTagsAndConcatLines(contentLines), "!ok");
-        }
-    }
+        List<Tag> tags = new ArrayList<>();
 
-    private static boolean containsTag(List<String> contents, String tag) {
-        for (String content : contents) {
-            if (content.contains(tag)) {
-                return true;
+        for (Tag tag : Tag.values()) {
+            if (tag.matches(contentLines)) {
+                tags.add(tag);
             }
         }
-        return false;
+
+        String content = stripTagsAndConcatLines(contentLines, tags);
+        return new Result(content, tags.get(0));
     }
 
-    private static String stripTagsAndConcatLines(List<String> lines, String... tags) {
-        List<String> newLines = new ArrayList<>();
-        for (String line : lines) {
-            String newLine = line;
-            for (String tag : tags) {
-                newLine = newLine.replace(tag, "");
-            }
-            // there might be trailing white spaces,
-            // we should remove them because we don't compare trailing white spaces
-            newLines.add(StringUtils.stripEnd(newLine, " "));
+    private static String stripTagsAndConcatLines(List<String> lines, List<Tag> tags) {
+        List<String> newLines = lines;
+        for (Tag tag : tags) {
+            newLines = tag.convert(newLines);
         }
         return String.join("\n", newLines);
     }
@@ -234,18 +303,19 @@ public class CliClientITCase extends AbstractTestBase {
             out.append(sqlScript.comment).append(sqlScript.sql);
             if (i < results.size()) {
                 Result result = results.get(i);
-                out.append(result.content).append(result.flag).append("\n");
+                out.append(result.content).append(result.highestTag.tag).append("\n");
             }
         }
+
         return out.toString();
     }
 
     private static final class Result {
         final String content;
-        final String flag;
+        final Tag highestTag;
 
-        private Result(String content, String flag) {
-            this.flag = flag;
+        private Result(String content, Tag highestTag) {
+            this.highestTag = highestTag;
             this.content = content;
         }
     }

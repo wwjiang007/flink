@@ -18,7 +18,6 @@
 package org.apache.flink.runtime.resourcemanager.slotmanager;
 
 import org.apache.flink.api.common.JobID;
-import org.apache.flink.api.common.resources.CPUResource;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple6;
@@ -55,6 +54,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 
 /** Tests of {@link FineGrainedSlotManager}. */
 public class FineGrainedSlotManagerTest extends FineGrainedSlotManagerTestBase {
@@ -568,7 +568,7 @@ public class FineGrainedSlotManagerTest extends FineGrainedSlotManagerTestBase {
                 final List<CompletableFuture<Void>> checkRequirementFutures = new ArrayList<>();
                 checkRequirementFutures.add(new CompletableFuture<>());
                 checkRequirementFutures.add(new CompletableFuture<>());
-                final long requirementCheckDelay = 20;
+                final long requirementCheckDelay = 50;
                 resourceAllocationStrategyBuilder.setTryFulfillRequirementsFunction(
                         (ignored1, ignored2) -> {
                             if (checkRequirementFutures.get(0).isDone()) {
@@ -589,6 +589,9 @@ public class FineGrainedSlotManagerTest extends FineGrainedSlotManagerTestBase {
                                     createResourceRequirementsForSingleSlot();
                             final TaskExecutorConnection taskExecutionConnection =
                                     createTaskExecutorConnection();
+                            final CompletableFuture<Void> registrationFuture =
+                                    new CompletableFuture<>();
+                            final long start = System.nanoTime();
                             runInMainThread(
                                     () -> {
                                         getSlotManager()
@@ -601,7 +604,15 @@ public class FineGrainedSlotManagerTest extends FineGrainedSlotManagerTestBase {
                                                         new SlotReport(),
                                                         DEFAULT_TOTAL_RESOURCE_PROFILE,
                                                         DEFAULT_SLOT_RESOURCE_PROFILE);
+                                        registrationFuture.complete(null);
                                     });
+
+                            assertFutureCompleteAndReturn(registrationFuture);
+                            final long registrationTime = (System.nanoTime() - start) / 1_000_000;
+                            assumeTrue(
+                                    "The time of process requirement and register task manager must not take longer than the requirement check delay. If it does, then this indicates a very slow machine.",
+                                    registrationTime < requirementCheckDelay);
+
                             assertFutureCompleteAndReturn(checkRequirementFutures.get(0));
                             assertFutureNotComplete(checkRequirementFutures.get(1));
 
@@ -718,10 +729,9 @@ public class FineGrainedSlotManagerTest extends FineGrainedSlotManagerTestBase {
         Consumer<SlotManagerConfigurationBuilder> maxTotalResourceSetter =
                 (smConfigBuilder) ->
                         smConfigBuilder.setMaxTotalCpu(
-                                (CPUResource)
-                                        DEFAULT_TOTAL_RESOURCE_PROFILE
-                                                .getCpuCores()
-                                                .multiply(BigDecimal.valueOf(1.5)));
+                                DEFAULT_TOTAL_RESOURCE_PROFILE
+                                        .getCpuCores()
+                                        .multiply(BigDecimal.valueOf(1.5)));
 
         testMaxTotalResourceExceededAllocateResource(maxTotalResourceSetter);
         testMaxTotalResourceExceededRegisterResource(maxTotalResourceSetter);

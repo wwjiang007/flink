@@ -48,8 +48,8 @@ from pyflink.table.types import _to_java_type, _create_type_verifier, RowType, D
 from pyflink.table.udf import UserDefinedFunctionWrapper, AggregateFunction, udaf, \
     UserDefinedAggregateFunctionWrapper, udtaf, TableAggregateFunction
 from pyflink.table.utils import to_expression_jarray
-from pyflink.util import utils
-from pyflink.util.utils import get_j_env_configuration, is_local_deployment, load_java_class, \
+from pyflink.util import java_utils
+from pyflink.util.java_utils import get_j_env_configuration, is_local_deployment, load_java_class, \
     to_j_explain_detail_arr, to_jarray
 
 __all__ = [
@@ -524,7 +524,7 @@ class TableEnvironment(object):
         """
         warnings.warn("Deprecated in 1.10. Use from_path instead.", DeprecationWarning)
         gateway = get_gateway()
-        j_table_paths = utils.to_jarray(gateway.jvm.String, table_path)
+        j_table_paths = java_utils.to_jarray(gateway.jvm.String, table_path)
         j_table = self._j_tenv.scan(j_table_paths)
         return Table(j_table, self)
 
@@ -1437,7 +1437,7 @@ class TableEnvironment(object):
         serializer = BatchedSerializer(self._serializer)
         try:
             with temp_file:
-                serializer.dump_to_stream(elements, temp_file)
+                serializer.serialize(elements, temp_file)
             row_type_info = _to_java_type(schema)
             execution_config = self._get_j_env().getConfig()
             gateway = get_gateway()
@@ -1530,7 +1530,7 @@ class TableEnvironment(object):
         data = [[c for (_, c) in pdf_slice.iteritems()] for pdf_slice in pdf_slices]
         try:
             with temp_file:
-                serializer.dump_to_stream(data, temp_file)
+                serializer.serialize(data, temp_file)
             jvm = get_gateway().jvm
 
             data_type = jvm.org.apache.flink.table.types.utils.TypeConversions\
@@ -1548,7 +1548,7 @@ class TableEnvironment(object):
 
     def _set_python_executable_for_local_executor(self):
         jvm = get_gateway().jvm
-        j_config = get_j_env_configuration(self)
+        j_config = get_j_env_configuration(self._get_j_env())
         if not j_config.containsKey(jvm.PythonOptions.PYTHON_EXECUTABLE.key()) \
                 and is_local_deployment(j_config):
             j_config.setString(jvm.PythonOptions.PYTHON_EXECUTABLE.key(), sys.executable)
@@ -1559,7 +1559,7 @@ class TableEnvironment(object):
         if jar_urls is not None:
             # normalize and remove duplicates
             jar_urls_set = set([jvm.java.net.URL(url).toString() for url in jar_urls.split(";")])
-            j_configuration = get_j_env_configuration(self)
+            j_configuration = get_j_env_configuration(self._get_j_env())
             if j_configuration.containsKey(config_key):
                 for url in j_configuration.getString(config_key, "").split(";"):
                     jar_urls_set.add(url)

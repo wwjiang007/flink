@@ -16,7 +16,7 @@
 # limitations under the License.
 
 # set tableau result mode
-SET execution.result-mode = tableau;
+SET sql-client.execution.result-mode = tableau;
 [INFO] Session property has been set.
 !info
 
@@ -24,9 +24,28 @@ SET execution.result-mode = tableau;
 # test load module
 # ==========================================================================
 
+# list default loaded and enabled module
+SHOW MODULES;
++-------------+
+| module name |
++-------------+
+|        core |
++-------------+
+1 row in set
+!ok
+
+SHOW FULL MODULES;
++-------------+------+
+| module name | used |
++-------------+------+
+|        core | true |
++-------------+------+
+1 row in set
+!ok
+
 # load core module twice
 LOAD MODULE core;
-[ERROR] Could not execute SQL statement. Load module failed! Reason:
+[ERROR] Could not execute SQL statement. Reason:
 org.apache.flink.table.api.ValidationException: A module with name 'core' already exists
 !error
 
@@ -52,7 +71,7 @@ Was expecting one of:
 
 # load hive module with module name capitalized
 LOAD MODULE Hive;
-[ERROR] Could not execute SQL statement. Load module failed! Reason:
+[ERROR] Could not execute SQL statement. Reason:
 org.apache.flink.table.api.NoMatchingTableFactoryException: Could not find a suitable table factory for 'org.apache.flink.table.factories.ModuleFactory' in
 the classpath.
 
@@ -69,12 +88,12 @@ org.apache.flink.table.module.hive.HiveModuleFactory
 
 # load hive module with specifying type
 LOAD MODULE myhive WITH ('type' = 'hive');
-[ERROR] Could not execute SQL statement. Load module failed! Reason:
+[ERROR] Could not execute SQL statement. Reason:
 org.apache.flink.table.api.ValidationException: Property 'type' = 'hive' is not supported since module name is used to find module
 !error
 
 LOAD MODULE hive;
-[INFO] Load module succeeded!
+[INFO] Execute statement succeed.
 !info
 
 # show enabled modules
@@ -101,11 +120,11 @@ SHOW FULL MODULES;
 
 # use hive built-in function after loading hive module
 SELECT SUBSTRING_INDEX('www.apache.org', '.', 2) FROM (VALUES (1, 'Hello World')) AS T(id, str);
-+----+----------------------+
-| op |               EXPR$0 |
-+----+----------------------+
-| +I |           www.apache |
-+----+----------------------+
++----+--------------------------------+
+| op |                         EXPR$0 |
++----+--------------------------------+
+| +I |                     www.apache |
++----+--------------------------------+
 Received a total of 1 row
 !ok
 
@@ -115,13 +134,13 @@ Received a total of 1 row
 
 # use duplicate modules
 USE MODULES hive, core, hive;
-[ERROR] Could not execute SQL statement. Use modules failed! Reason:
+[ERROR] Could not execute SQL statement. Reason:
 org.apache.flink.table.api.ValidationException: Module 'hive' appears more than once
 !error
 
 # change module resolution order
 USE MODULES hive, core;
-[INFO] Use modules succeeded!
+[INFO] Execute statement succeed.
 !info
 
 SHOW MODULES;
@@ -146,7 +165,7 @@ SHOW FULL MODULES;
 
 # disable hive module
 USE MODULES core;
-[INFO] Use modules succeeded!
+[INFO] Execute statement succeed.
 !info
 
 SHOW MODULES;
@@ -179,14 +198,11 @@ org.apache.calcite.sql.validate.SqlValidatorException: No match found for functi
 # ==========================================================================
 
 UNLOAD MODULE core;
-[INFO] Unload module succeeded!
+[INFO] Execute statement succeed.
 !info
 
 SHOW MODULES;
-+-------------+
-| module name |
-+-------------+
-0 row in set
+Empty set
 !ok
 
 SHOW FULL MODULES;
@@ -200,6 +216,6 @@ SHOW FULL MODULES;
 
 # unload core module twice
 UNLOAD MODULE core;
-[ERROR] Could not execute SQL statement. Unload module failed! Reason:
+[ERROR] Could not execute SQL statement. Reason:
 org.apache.flink.table.api.ValidationException: No module with name 'core' exists
 !error

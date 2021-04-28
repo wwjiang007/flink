@@ -73,15 +73,17 @@ public class FlinkSqlOperatorTable extends ReflectiveSqlOperatorTable {
     }
 
     private static final SqlReturnTypeInference ROWTIME_TYPE_INFERENCE =
-            createTimeIndicatorReturnType(true);
+            createTimeIndicatorReturnType(true, false);
     private static final SqlReturnTypeInference PROCTIME_TYPE_INFERENCE =
-            createTimeIndicatorReturnType(false);
+            createTimeIndicatorReturnType(false, true);
 
-    private static SqlReturnTypeInference createTimeIndicatorReturnType(boolean isRowTime) {
+    private static SqlReturnTypeInference createTimeIndicatorReturnType(
+            boolean isRowTime, boolean isTimestampLtz) {
         return ReturnTypes.explicit(
                 factory -> {
                     if (isRowTime) {
-                        return ((FlinkTypeFactory) factory).createRowtimeIndicatorType(false);
+                        return ((FlinkTypeFactory) factory)
+                                .createRowtimeIndicatorType(false, isTimestampLtz);
                     } else {
                         return ((FlinkTypeFactory) factory).createProctimeIndicatorType(false);
                     }
@@ -117,7 +119,11 @@ public class FlinkSqlOperatorTable extends ReflectiveSqlOperatorTable {
                     SqlFunctionCategory.TIMEDATE,
                     false);
 
-    /** Function used to access a event time attribute from MATCH_RECOGNIZE. */
+    /**
+     * Function used to access a event time attribute with TIMESTAMP or TIMESTAMP_LTZ type from
+     * MATCH_RECOGNIZE, for TIMESTAMP_LTZ type, we rewrite the return type in
+     * [org.apache.flink.table.planner.calcite.RelTimeIndicatorConverter].
+     */
     public static final SqlFunction MATCH_ROWTIME =
             new CalciteSqlFunction(
                     "MATCH_ROWTIME",
@@ -555,23 +561,28 @@ public class FlinkSqlOperatorTable extends ReflectiveSqlOperatorTable {
                     OperandTypes.family(SqlTypeFamily.STRING, SqlTypeFamily.ANY),
                     SqlFunctionCategory.STRING);
 
+    // Flink timestamp functions
+    public static final SqlFunction LOCALTIMESTAMP =
+            new FlinkSqlTimestampFunction("LOCALTIMESTAMP", SqlTypeName.TIMESTAMP, 3);
+
+    public static final SqlFunction CURRENT_TIMESTAMP =
+            new FlinkSqlTimestampFunction(
+                    "CURRENT_TIMESTAMP", SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE, 3);
+
     public static final SqlFunction NOW =
-            new SqlFunction(
-                    "NOW",
-                    SqlKind.OTHER_FUNCTION,
-                    ReturnTypes.explicit(SqlTypeName.TIMESTAMP, 0),
-                    null,
-                    OperandTypes.NILADIC,
-                    SqlFunctionCategory.TIMEDATE) {
-
+            new FlinkSqlTimestampFunction("NOW", SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE, 3) {
                 @Override
-                public boolean isDeterministic() {
-                    return false;
+                public SqlSyntax getSyntax() {
+                    return SqlSyntax.FUNCTION;
                 }
+            };
+    public static final SqlFunction CURRENT_ROW_TIMESTAMP =
+            new FlinkSqlTimestampFunction(
+                    "CURRENT_ROW_TIMESTAMP", SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE, 3) {
 
                 @Override
-                public SqlMonotonicity getMonotonicity(SqlOperatorBinding call) {
-                    return SqlMonotonicity.INCREASING;
+                public SqlSyntax getSyntax() {
+                    return SqlSyntax.FUNCTION;
                 }
             };
 
@@ -763,9 +774,7 @@ public class FlinkSqlOperatorTable extends ReflectiveSqlOperatorTable {
                             ReturnTypes.explicit(SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE, 3),
                             SqlTypeTransforms.FORCE_NULLABLE),
                     null,
-                    OperandTypes.or(
-                            OperandTypes.family(SqlTypeFamily.NUMERIC),
-                            OperandTypes.family(SqlTypeFamily.NUMERIC, SqlTypeFamily.INTEGER)),
+                    OperandTypes.family(SqlTypeFamily.NUMERIC, SqlTypeFamily.INTEGER),
                     SqlFunctionCategory.TIMEDATE);
 
     public static final SqlFunction TO_DATE =
@@ -1099,9 +1108,7 @@ public class FlinkSqlOperatorTable extends ReflectiveSqlOperatorTable {
     public static final SqlFunction FLOOR = SqlStdOperatorTable.FLOOR;
     public static final SqlFunction CEIL = SqlStdOperatorTable.CEIL;
     public static final SqlFunction LOCALTIME = SqlStdOperatorTable.LOCALTIME;
-    public static final SqlFunction LOCALTIMESTAMP = SqlStdOperatorTable.LOCALTIMESTAMP;
     public static final SqlFunction CURRENT_TIME = SqlStdOperatorTable.CURRENT_TIME;
-    public static final SqlFunction CURRENT_TIMESTAMP = SqlStdOperatorTable.CURRENT_TIMESTAMP;
     public static final SqlFunction CURRENT_DATE = SqlStdOperatorTable.CURRENT_DATE;
     public static final SqlFunction CAST = SqlStdOperatorTable.CAST;
     public static final SqlOperator SCALAR_QUERY = SqlStdOperatorTable.SCALAR_QUERY;

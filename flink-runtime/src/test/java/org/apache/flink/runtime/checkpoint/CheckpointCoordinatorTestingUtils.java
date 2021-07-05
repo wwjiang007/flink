@@ -25,9 +25,7 @@ import org.apache.flink.core.io.SimpleVersionedSerializer;
 import org.apache.flink.runtime.OperatorIDPair;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutorServiceAdapter;
-import org.apache.flink.runtime.concurrent.Executors;
 import org.apache.flink.runtime.concurrent.ManuallyTriggeredScheduledExecutor;
-import org.apache.flink.runtime.concurrent.ScheduledExecutor;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
 import org.apache.flink.runtime.executiongraph.ExecutionGraph;
@@ -61,6 +59,8 @@ import org.apache.flink.runtime.testtasks.NoOpInvokable;
 import org.apache.flink.runtime.testutils.CommonTestUtils;
 import org.apache.flink.util.InstantiationUtil;
 import org.apache.flink.util.Preconditions;
+import org.apache.flink.util.concurrent.Executors;
+import org.apache.flink.util.concurrent.ScheduledExecutor;
 
 import org.junit.Assert;
 
@@ -695,6 +695,12 @@ public class CheckpointCoordinatorTestingUtils {
             return this;
         }
 
+        public CheckpointCoordinatorBuilder setCheckpointsCleaner(
+                CheckpointsCleaner checkpointsCleaner) {
+            this.checkpointsCleaner = checkpointsCleaner;
+            return this;
+        }
+
         public CheckpointCoordinatorBuilder setCheckpointIDCounter(
                 CheckpointIDCounter checkpointIDCounter) {
             this.checkpointIDCounter = checkpointIDCounter;
@@ -805,7 +811,7 @@ public class CheckpointCoordinatorTestingUtils {
 
     // ----------------- Mock class builders ---------------
 
-    public static final class MockOperatorCheckpointCoordinatorContextBuilder {
+    static final class MockOperatorCheckpointCoordinatorContextBuilder {
         private BiConsumer<Long, CompletableFuture<byte[]>> onCallingCheckpointCoordinator = null;
         private Consumer<Long> onCallingAfterSourceBarrierInjection = null;
         private OperatorID operatorID = null;

@@ -28,7 +28,6 @@ import org.apache.flink.runtime.checkpoint.hooks.TestMasterHook;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutorServiceAdapter;
 import org.apache.flink.runtime.concurrent.ManuallyTriggeredScheduledExecutor;
-import org.apache.flink.runtime.concurrent.ScheduledExecutor;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.ArchivedExecution;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
@@ -69,6 +68,7 @@ import org.apache.flink.util.ExecutorUtils;
 import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.Preconditions;
 import org.apache.flink.util.TestLogger;
+import org.apache.flink.util.concurrent.ScheduledExecutor;
 
 import org.apache.flink.shaded.guava18.com.google.common.collect.Iterables;
 
@@ -1129,6 +1129,48 @@ public class DefaultSchedulerTest extends TestLogger {
                                 taskFailureExecutionVertex.getCurrentAssignedResourceLocation()),
                         ExceptionHistoryEntryMatcher.matchesGlobalFailure(
                                 failingException, updateStateTriggeringJobFailureTimestamp)));
+    }
+
+    @Test
+    public void testExceptionHistoryWithPreDeployFailure() {
+        // disable auto-completing slot requests to simulate timeout
+        executionSlotAllocatorFactory
+                .getTestExecutionSlotAllocator()
+                .disableAutoCompletePendingRequests();
+        final DefaultScheduler scheduler =
+                createSchedulerAndStartScheduling(singleNonParallelJobVertexJobGraph());
+
+        executionSlotAllocatorFactory.getTestExecutionSlotAllocator().timeoutPendingRequests();
+
+        final ArchivedExecutionVertex taskFailureExecutionVertex =
+                Iterables.getOnlyElement(
+                        scheduler
+                                .requestJob()
+                                .getArchivedExecutionGraph()
+                                .getAllExecutionVertices());
+
+        // pending slot request timeout triggers a task failure that needs to be processed
+        taskRestartExecutor.triggerNonPeriodicScheduledTask();
+
+        // sanity check that the TaskManagerLocation of the failed task is indeed null, as expected
+        assertThat(
+                taskFailureExecutionVertex.getCurrentAssignedResourceLocation(), is(nullValue()));
+
+        final ErrorInfo failureInfo =
+                taskFailureExecutionVertex
+                        .getFailureInfo()
+                        .orElseThrow(() -> new AssertionError("A failureInfo should be set."));
+
+        final Iterable<RootExceptionHistoryEntry> actualExceptionHistory =
+                scheduler.getExceptionHistory();
+        assertThat(
+                actualExceptionHistory,
+                IsIterableContainingInOrder.contains(
+                        ExceptionHistoryEntryMatcher.matchesFailure(
+                                failureInfo.getException(),
+                                failureInfo.getTimestamp(),
+                                taskFailureExecutionVertex.getTaskNameWithSubtaskIndex(),
+                                taskFailureExecutionVertex.getCurrentAssignedResourceLocation())));
     }
 
     @Test

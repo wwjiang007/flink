@@ -30,6 +30,7 @@ import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.core.plugin.PluginManager;
 import org.apache.flink.core.plugin.PluginUtils;
 import org.apache.flink.runtime.entrypoint.StandaloneSessionClusterEntrypoint;
+import org.apache.flink.runtime.taskexecutor.TaskExecutorResourceUtils;
 import org.apache.flink.runtime.taskexecutor.TaskManagerRunner;
 import org.apache.flink.runtime.util.BlobServerResource;
 import org.apache.flink.runtime.zookeeper.ZooKeeperResource;
@@ -90,7 +91,7 @@ public abstract class AbstractTaskManagerProcessFailureRecoveryTest extends Test
         File coordinateTempDir = null;
 
         Configuration config = new Configuration();
-        config.setString(AkkaOptions.ASK_TIMEOUT, "100 s");
+        config.set(AkkaOptions.ASK_TIMEOUT_DURATION, Duration.ofSeconds(100));
         config.setString(JobManagerOptions.ADDRESS, "localhost");
         config.setString(RestOptions.BIND_PORT, "0");
         config.setLong(HeartbeatManagerOptions.HEARTBEAT_INTERVAL, 500L);
@@ -335,6 +336,7 @@ public abstract class AbstractTaskManagerProcessFailureRecoveryTest extends Test
                 Configuration cfg = parameterTool.getConfiguration();
                 final PluginManager pluginManager =
                         PluginUtils.createPluginManagerFromRootFolder(cfg);
+                TaskExecutorResourceUtils.adjustForLocalExecution(cfg);
 
                 TaskManagerRunner.runTaskManager(cfg, pluginManager);
             } catch (Throwable t) {

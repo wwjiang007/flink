@@ -20,6 +20,7 @@ package org.apache.flink.runtime.io.network.netty;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.runtime.io.network.NetworkClientHandler;
+import org.apache.flink.runtime.io.network.netty.NettyMessage.AckAllUserRecordsProcessed;
 import org.apache.flink.runtime.io.network.netty.NettyMessage.AddCredit;
 import org.apache.flink.runtime.io.network.netty.NettyMessage.ResumeConsumption;
 import org.apache.flink.runtime.io.network.netty.exception.LocalTransportException;
@@ -137,6 +138,18 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
                                                 new ResumeConsumptionMessage(inputChannel)));
     }
 
+    @Override
+    public void acknowledgeAllRecordsProcessed(RemoteInputChannel inputChannel) {
+        ctx.executor()
+                .execute(
+                        () -> {
+                            ctx.pipeline()
+                                    .fireUserEventTriggered(
+                                            new AcknowledgeAllRecordsProcessedMessage(
+                                                    inputChannel));
+                        });
+    }
+
     // ------------------------------------------------------------------------
     // Network events
     // ------------------------------------------------------------------------
@@ -184,8 +197,8 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
             final TransportException tex;
 
             // Improve on the connection reset by peer error message
-            if (cause instanceof IOException
-                    && cause.getMessage().equals("Connection reset by peer")) {
+            if (cause.getMessage() != null
+                    && cause.getMessage().contains("Connection reset by peer")) {
                 tex =
                         new RemoteTransportException(
                                 "Lost connection to task manager '"
@@ -434,6 +447,18 @@ class CreditBasedPartitionRequestClientHandler extends ChannelInboundHandlerAdap
         @Override
         Object buildMessage() {
             return new ResumeConsumption(inputChannel.getInputChannelId());
+        }
+    }
+
+    private static class AcknowledgeAllRecordsProcessedMessage extends ClientOutboundMessage {
+
+        AcknowledgeAllRecordsProcessedMessage(RemoteInputChannel inputChannel) {
+            super(checkNotNull(inputChannel));
+        }
+
+        @Override
+        Object buildMessage() {
+            return new AckAllUserRecordsProcessed(inputChannel.getInputChannelId());
         }
     }
 }

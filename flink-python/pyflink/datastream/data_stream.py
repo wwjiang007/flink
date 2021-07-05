@@ -38,6 +38,9 @@ from pyflink.datastream.utils import convert_to_python_obj
 from pyflink.java_gateway import get_gateway
 
 
+__all__ = ['CloseableIterator']
+
+
 class DataStream(object):
     """
     A DataStream represents a stream of elements of the same type. A DataStream can be transformed
@@ -368,7 +371,10 @@ class DataStream(object):
         """
         j_data_streams = []
         for data_stream in streams:
-            j_data_streams.append(data_stream._j_data_stream)
+            if isinstance(data_stream, KeyedStream):
+                j_data_streams.append(data_stream._values()._j_data_stream)
+            else:
+                j_data_streams.append(data_stream._j_data_stream)
         gateway = get_gateway()
         JDataStream = gateway.jvm.org.apache.flink.streaming.api.datastream.DataStream
         j_data_stream_arr = get_gateway().new_array(JDataStream, len(j_data_streams))
@@ -926,7 +932,8 @@ class KeyedStream(DataStream):
 
             def open(self, runtime_context: RuntimeContext):
                 self._reduce_value_state = runtime_context.get_state(
-                    ValueStateDescriptor("_reduce_state" + str(uuid.uuid4()), output_type))
+                    ValueStateDescriptor("_reduce_state" + str(uuid.uuid4()),
+                                         Types.PICKLED_BYTE_ARRAY()))
                 self._reduce_function.open(runtime_context)
                 from pyflink.fn_execution.datastream.runtime_context import StreamingRuntimeContext
                 self._in_batch_execution_mode = \
@@ -1194,7 +1201,7 @@ class WindowedStream(object):
                 self.get_execution_environment())
         window_serializer = self._window_assigner.get_window_serializer()
         window_state_descriptor = ListStateDescriptor(
-            "window-contents", self.get_input_type())
+            "window-contents", Types.PICKLED_BYTE_ARRAY())
         window_operation_descriptor = WindowOperationDescriptor(
             self._window_assigner,
             self._window_trigger,

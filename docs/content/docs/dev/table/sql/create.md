@@ -69,8 +69,7 @@ The following examples show how to run a CREATE statement in SQL CLI.
 {{< tabs "0b1b298a-b92f-4f95-8d06-49544b487b75" >}}
 {{< tab "Java" >}}
 ```java
-EnvironmentSettings settings = EnvironmentSettings.newInstance()...
-TableEnvironment tableEnv = TableEnvironment.create(settings);
+TableEnvironment tableEnv = TableEnvironment.create(...);
 
 // SQL query with a registered table
 // register a table named "Orders"
@@ -89,8 +88,7 @@ tableEnv.executeSql(
 {{< /tab >}}
 {{< tab "Scala" >}}
 ```scala
-val settings = EnvironmentSettings.newInstance()...
-val tableEnv = TableEnvironment.create(settings)
+val tableEnv = TableEnvironment.create(...)
 
 // SQL query with a registered table
 // register a table named "Orders"
@@ -109,8 +107,7 @@ tableEnv.executeSql(
 {{< /tab >}}
 {{< tab "Python" >}}
 ```python
-settings = EnvironmentSettings.new_instance()...
-table_env = TableEnvironment.create(settings)
+table_env = TableEnvironment.create(...)
 
 # SQL query with a registered table
 # register a table named "Orders"
@@ -588,7 +585,7 @@ If the language tag is JAVA/SCALA, the identifier is the full classpath of the U
 
 If the language tag is PYTHON, the identifier is the fully qualified name of the UDF, e.g. `pyflink.table.tests.test_udf.add`. For the implementation of Python UDF, please refer to [Python UDFs]({{< ref "docs/dev/python/table/udfs/python_udfs" >}}) for more details.
 
-If the language tag is PYTHON, however the current program is written in Java/Scala or pure SQL, then you need to [configure the Python dependencies]({{< ref "docs/dev/python/table/dependency_management" >}}#python-dependency-in-javascala-program).
+If the language tag is PYTHON, however the current program is written in Java/Scala or pure SQL, then you need to [configure the Python dependencies]({{< ref "docs/dev/python/dependency_management" >}}#python-dependency-in-javascala-program).
 
 **TEMPORARY**
 

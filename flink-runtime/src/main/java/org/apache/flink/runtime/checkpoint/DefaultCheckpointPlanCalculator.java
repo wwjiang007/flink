@@ -111,7 +111,7 @@ public class DefaultCheckpointPlanCalculator implements CheckpointPlanCalculator
                                         ? calculateAfterTasksFinished()
                                         : calculateWithAllTasksRunning();
 
-                        checkTasksStarted(result.getTasksToTrigger());
+                        checkTasksStarted(result.getTasksToWaitFor());
 
                         return result;
                     } catch (Throwable throwable) {
@@ -150,7 +150,7 @@ public class DefaultCheckpointPlanCalculator implements CheckpointPlanCalculator
             if (execution.getState() != ExecutionState.RUNNING) {
                 throw new CheckpointException(
                         String.format(
-                                "Checkpoint triggering task %s of job %s has not being executed at the moment. "
+                                "Checkpoint triggering task %s of job %s is not being executed at the moment. "
                                         + "Aborting checkpoint.",
                                 execution.getVertex().getTaskNameWithSubtaskIndex(), jobId),
                         CheckpointFailureReason.NOT_ALL_REQUIRED_TASKS_RUNNING);

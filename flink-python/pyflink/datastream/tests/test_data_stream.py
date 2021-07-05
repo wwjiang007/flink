@@ -214,9 +214,9 @@ class DataStreamTests(object):
 
             def open(self, runtime_context: RuntimeContext):
                 self.pre1 = runtime_context.get_state(
-                    ValueStateDescriptor("pre1", Types.STRING()))
+                    ValueStateDescriptor("pre1", Types.PICKLED_BYTE_ARRAY()))
                 self.pre2 = runtime_context.get_state(
-                    ValueStateDescriptor("pre2", Types.STRING()))
+                    ValueStateDescriptor("pre2", Types.PICKLED_BYTE_ARRAY()))
 
             def map1(self, value):
                 if value[0] == 'b':
@@ -409,7 +409,7 @@ class DataStreamTests(object):
 
             def open(self, runtime_context: RuntimeContext):
                 self.state = runtime_context.get_state(
-                    ValueStateDescriptor("test_state", Types.INT()))
+                    ValueStateDescriptor("test_state", Types.PICKLED_BYTE_ARRAY()))
 
             def map(self, value):
                 state_value = self.state.value()
@@ -453,7 +453,7 @@ class DataStreamTests(object):
 
             def open(self, runtime_context: RuntimeContext):
                 self.state = runtime_context.get_state(
-                    ValueStateDescriptor("test_state", Types.INT()))
+                    ValueStateDescriptor("test_state", Types.PICKLED_BYTE_ARRAY()))
 
             def flat_map(self, value):
                 state_value = self.state.value()
@@ -497,7 +497,7 @@ class DataStreamTests(object):
 
             def open(self, runtime_context: RuntimeContext):
                 self.state = runtime_context.get_state(
-                    ValueStateDescriptor("test_state", Types.INT()))
+                    ValueStateDescriptor("test_state", Types.PICKLED_BYTE_ARRAY()))
 
             def filter(self, value):
                 state_value = self.state.value()
@@ -594,6 +594,27 @@ class DataStreamTests(object):
         expected.sort()
         self.assertEqual(expected, results)
 
+    def test_object_array_type_info(self):
+        ds = self.env.from_collection([(1, [1.1, None, 1.30], [None, 'hi', 'flink']),
+                                       (2, [None, 2.2, 2.3], ['hello', None, 'flink']),
+                                      (3, [3.1, 3.2, None], ['hello', 'hi', None])],
+                                      type_info=Types.ROW([Types.INT(),
+                                                           Types.OBJECT_ARRAY(Types.FLOAT()),
+                                                           Types.OBJECT_ARRAY(Types.STRING())]))
+
+        ds.map(lambda x: x, output_type=Types.ROW([Types.INT(),
+                                                   Types.OBJECT_ARRAY(Types.FLOAT()),
+                                                   Types.OBJECT_ARRAY(Types.STRING())]))\
+            .add_sink(self.test_sink)
+        self.env.execute("test basic array type info")
+        results = self.test_sink.get_results()
+        expected = ['+I[1, [1.1, null, 1.3], [null, hi, flink]]',
+                    '+I[2, [null, 2.2, 2.3], [hello, null, flink]]',
+                    '+I[3, [3.1, 3.2, null], [hello, hi, null]]']
+        results.sort()
+        expected.sort()
+        self.assertEqual(expected, results)
+
     def test_sql_timestamp_type_info(self):
         ds = self.env.from_collection([(datetime.date(2021, 1, 9),
                                         datetime.time(12, 0, 0),
@@ -673,11 +694,15 @@ class DataStreamTests(object):
                 self.map_state = None
 
             def open(self, runtime_context: RuntimeContext):
-                value_state_descriptor = ValueStateDescriptor('value_state', Types.INT())
+                value_state_descriptor = ValueStateDescriptor('value_state',
+                                                              Types.PICKLED_BYTE_ARRAY())
                 self.value_state = runtime_context.get_state(value_state_descriptor)
-                list_state_descriptor = ListStateDescriptor('list_state', Types.INT())
+                list_state_descriptor = ListStateDescriptor('list_state',
+                                                            Types.PICKLED_BYTE_ARRAY())
                 self.list_state = runtime_context.get_list_state(list_state_descriptor)
-                map_state_descriptor = MapStateDescriptor('map_state', Types.INT(), Types.STRING())
+                map_state_descriptor = MapStateDescriptor('map_state',
+                                                          Types.PICKLED_BYTE_ARRAY(),
+                                                          Types.PICKLED_BYTE_ARRAY())
                 self.map_state = runtime_context.get_map_state(map_state_descriptor)
 
             def process_element(self, value, ctx):
@@ -745,11 +770,11 @@ class DataStreamTests(object):
             def open(self, runtime_context: RuntimeContext):
                 self.reducing_state = runtime_context.get_reducing_state(
                     ReducingStateDescriptor(
-                        'reducing_state', lambda i, i2: i + i2, Types.INT()))
+                        'reducing_state', lambda i, i2: i + i2, Types.PICKLED_BYTE_ARRAY()))
 
             def process_element(self, value, ctx):
                 self.reducing_state.add(value[0])
-                yield Row(self.reducing_state.get(), value[1])
+                yield self.reducing_state.get(), value[1]
 
         data_stream.key_by(lambda x: x[1], key_type=Types.STRING()) \
             .process(MyProcessFunction(), output_type=Types.TUPLE([Types.INT(), Types.STRING()])) \
@@ -789,11 +814,11 @@ class DataStreamTests(object):
             def open(self, runtime_context: RuntimeContext):
                 self.aggregating_state = runtime_context.get_aggregating_state(
                     AggregatingStateDescriptor(
-                        'aggregating_state', MyAggregateFunction(), Types.INT()))
+                        'aggregating_state', MyAggregateFunction(), Types.PICKLED_BYTE_ARRAY()))
 
             def process_element(self, value, ctx):
                 self.aggregating_state.add(value[0])
-                yield Row(self.aggregating_state.get(), value[1])
+                yield self.aggregating_state.get(), value[1]
 
         data_stream.key_by(lambda x: x[1], key_type=Types.STRING()) \
             .process(MyProcessFunction(), output_type=Types.TUPLE([Types.INT(), Types.STRING()])) \
@@ -877,9 +902,9 @@ class StreamingModeDataStreamTests(DataStreamTests, PyFlinkStreamingTestCase):
         ds_2 = self.env.from_collection([4, 5, 6])
         ds_3 = self.env.from_collection([7, 8, 9])
 
-        united_stream = ds_3.union(ds_1, ds_2)
+        unioned_stream = ds_3.union(ds_1, ds_2)
 
-        united_stream.map(lambda x: x + 1).add_sink(self.test_sink)
+        unioned_stream.map(lambda x: x + 1).add_sink(self.test_sink)
         exec_plan = eval(self.env.get_execution_plan())
         source_ids = []
         union_node_pre_ids = []
@@ -893,6 +918,25 @@ class StreamingModeDataStreamTests(DataStreamTests, PyFlinkStreamingTestCase):
         source_ids.sort()
         union_node_pre_ids.sort()
         self.assertEqual(source_ids, union_node_pre_ids)
+
+    def test_keyed_stream_union(self):
+        ds_1 = self.env.from_collection([1, 2, 3])
+        ds_2 = self.env.from_collection([4, 5, 6])
+        unioned_stream = ds_1.key_by(lambda x: x).union(ds_2.key_by(lambda x: x))
+        unioned_stream.add_sink(self.test_sink)
+        exec_plan = eval(self.env.get_execution_plan())
+        expected_union_node_pre_ids = []
+        union_node_pre_ids = []
+        for node in exec_plan['nodes']:
+            if node['type'] == '_keyed_stream_values_operator':
+                expected_union_node_pre_ids.append(node['id'])
+            if node['pact'] == 'Data Sink':
+                for pre in node['predecessors']:
+                    union_node_pre_ids.append(pre['id'])
+
+        expected_union_node_pre_ids.sort()
+        union_node_pre_ids.sort()
+        self.assertEqual(expected_union_node_pre_ids, union_node_pre_ids)
 
     def test_project(self):
         ds = self.env.from_collection([[1, 2, 3, 4], [5, 6, 7, 8]],
@@ -1312,7 +1356,7 @@ class MyRichCoFlatMapFunction(CoFlatMapFunction):
 
     def open(self, runtime_context: RuntimeContext):
         self.map_state = runtime_context.get_map_state(
-            MapStateDescriptor("map", Types.STRING(), Types.BOOLEAN()))
+            MapStateDescriptor("map", Types.PICKLED_BYTE_ARRAY(), Types.PICKLED_BYTE_ARRAY()))
 
     def flat_map1(self, value):
         yield str(value[0] + 1)
@@ -1332,7 +1376,8 @@ class MyKeyedCoProcessFunction(KeyedCoProcessFunction):
 
     def open(self, runtime_context: RuntimeContext):
         self.timer_registered = False
-        self.count_state = runtime_context.get_state(ValueStateDescriptor("count", Types.INT()))
+        self.count_state = runtime_context.get_state(ValueStateDescriptor(
+            "count", Types.PICKLED_BYTE_ARRAY()))
 
     def process_element1(self, value, ctx: 'KeyedCoProcessFunction.Context'):
         if not self.timer_registered:
@@ -1366,7 +1411,7 @@ class MyReduceFunction(ReduceFunction):
 
     def open(self, runtime_context: RuntimeContext):
         self.state = runtime_context.get_state(
-            ValueStateDescriptor("test_state", Types.INT()))
+            ValueStateDescriptor("test_state", Types.PICKLED_BYTE_ARRAY()))
 
     def reduce(self, value1, value2):
         state_value = self.state.value()
@@ -1394,7 +1439,7 @@ class SimpleCountWindowTrigger(Trigger[tuple, CountWindow]):
     def __init__(self):
         self._window_size = 3
         self._count_state_descriptor = ReducingStateDescriptor(
-            "trigger_counter", lambda a, b: a + b, Types.BIG_INT())
+            "trigger_counter", lambda a, b: a + b, Types.PICKLED_BYTE_ARRAY())
 
     def on_element(self,
                    element: tuple,
@@ -1434,7 +1479,7 @@ class SimpleCountWindowAssigner(WindowAssigner[tuple, CountWindow]):
         self._window_id = 0
         self._window_size = 3
         self._counter_state_descriptor = ReducingStateDescriptor(
-            "assigner_counter", lambda a, b: a + b, Types.BIG_INT())
+            "assigner_counter", lambda a, b: a + b, Types.PICKLED_BYTE_ARRAY())
 
     def assign_windows(self,
                        element: tuple,

@@ -244,8 +244,8 @@ For example, use the following command to enable the S3 plugin for your Flink se
 
 ```bash
 $ ./bin/kubernetes-session.sh
-    -Dcontainerized.master.env.ENABLE_BUILT_IN_PLUGINS=flink-s3-fs-hadoop-{{< version >}}}.jar \
-    -Dcontainerized.taskmanager.env.ENABLE_BUILT_IN_PLUGINS=flink-s3-fs-hadoop-{{< version >}}}.jar
+    -Dcontainerized.master.env.ENABLE_BUILT_IN_PLUGINS=flink-s3-fs-hadoop-{{< version >}}.jar \
+    -Dcontainerized.taskmanager.env.ENABLE_BUILT_IN_PLUGINS=flink-s3-fs-hadoop-{{< version >}}.jar
 ```
 
 ### Custom Docker Image
@@ -291,6 +291,10 @@ For more details see the [official Kubernetes documentation](https://kubernetes.
 ### High-Availability on Kubernetes
 
 For high availability on Kubernetes, you can use the [existing high availability services]({{< ref "docs/deployment/ha/overview" >}}).
+
+Configure the value of <a href="{{< ref "docs/deployment/config" >}}#kubernetes-jobmanager-replicas">kubernetes.jobmanager.replicas</a> to greater than 1 to start standby JobManagers.
+It will help to achieve faster recovery.
+Notice that high availability should be enabled when starting standby JobManagers.
 
 ### Manual Resource Cleanup
 

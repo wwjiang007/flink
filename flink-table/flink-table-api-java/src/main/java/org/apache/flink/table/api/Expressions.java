@@ -20,6 +20,7 @@ package org.apache.flink.table.api;
 
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.table.connector.source.abilities.SupportsSourceWatermark;
 import org.apache.flink.table.expressions.ApiExpressionUtils;
 import org.apache.flink.table.expressions.Expression;
 import org.apache.flink.table.expressions.ResolvedExpression;
@@ -208,6 +209,27 @@ public final class Expressions {
      */
     public static ApiExpression currentTimestamp() {
         return apiCall(BuiltInFunctionDefinitions.CURRENT_TIMESTAMP);
+    }
+
+    /**
+     * Returns the current watermark for the given rowtime attribute, or {@code NULL} if no common
+     * watermark of all upstream operations is available at the current operation in the pipeline.
+     *
+     * <p>The function returns the watermark with the same type as the rowtime attribute, but with
+     * an adjusted precision of 3. For example, if the rowtime attribute is {@link
+     * DataTypes#TIMESTAMP_LTZ(int) TIMESTAMP_LTZ(9)}, the function will return {@link
+     * DataTypes#TIMESTAMP_LTZ(int) TIMESTAMP_LTZ(3)}.
+     *
+     * <p>If no watermark has been emitted yet, the function will return {@code NULL}. Users must
+     * take care of this when comparing against it, e.g. in order to filter out late data you can
+     * use
+     *
+     * <pre>{@code
+     * WHERE CURRENT_WATERMARK(ts) IS NULL OR ts > CURRENT_WATERMARK(ts)
+     * }</pre>
+     */
+    public static ApiExpression currentWatermark(Object rowtimeAttribute) {
+        return apiCall(BuiltInFunctionDefinitions.CURRENT_WATERMARK, rowtimeAttribute);
     }
 
     /**
@@ -462,6 +484,21 @@ public final class Expressions {
     /** Calculates the logarithm of the given value to the given base. */
     public static ApiExpression log(Object base, Object value) {
         return apiCall(BuiltInFunctionDefinitions.LOG, base, value);
+    }
+
+    /**
+     * Source watermark declaration for {@link Schema}.
+     *
+     * <p>This is a marker function that doesn't have concrete runtime implementation. It can only
+     * be used as a single expression in {@link Schema.Builder#watermark(String, Expression)}. The
+     * declaration will be pushed down into a table source that implements the {@link
+     * SupportsSourceWatermark} interface. The source will emit system-defined watermarks
+     * afterwards.
+     *
+     * <p>Please check the documentation whether the connector supports source watermarks.
+     */
+    public static ApiExpression sourceWatermark() {
+        return apiCall(BuiltInFunctionDefinitions.SOURCE_WATERMARK);
     }
 
     /**

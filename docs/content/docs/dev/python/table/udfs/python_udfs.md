@@ -1,6 +1,6 @@
 ---
 title: "General User-defined Functions"
-weight: 1
+weight: 5
 type: docs
 aliases:
   - /dev/python/table-api-users-guide/udfs/python_udfs.html
@@ -50,7 +50,7 @@ class HashCode(ScalarFunction):
   def eval(self, s):
     return hash(s) * self.factor
 
-settings = EnvironmentSettings.new_instance().in_batch_mode().use_blink_planner().build()
+settings = EnvironmentSettings.in_batch_mode()
 table_env = TableEnvironment.create(settings)
 
 hash_code = udf(HashCode(), result_type=DataTypes.BIGINT())
@@ -80,7 +80,7 @@ public class HashCode extends ScalarFunction {
 '''
 from pyflink.table.expressions import call
 
-settings = EnvironmentSettings.new_instance().in_batch_mode().use_blink_planner().build()
+settings = EnvironmentSettings.in_batch_mode()
 table_env = TableEnvironment.create(settings)
 
 # register the Java function
@@ -150,7 +150,7 @@ class Split(TableFunction):
         for s in string.split(" "):
             yield s, len(s)
 
-env_settings = EnvironmentSettings.new_instance().use_blink_planner().is_streaming_mode().build()
+env_settings = EnvironmentSettings.in_streaming_mode()
 table_env = TableEnvironment.create(env_settings)
 my_table = ...  # type: Table, table schema: [a: String]
 
@@ -188,7 +188,7 @@ public class Split extends TableFunction<Tuple2<String, Integer>> {
 '''
 from pyflink.table.expressions import call
 
-env_settings = EnvironmentSettings.new_instance().use_blink_planner().is_streaming_mode().build()
+env_settings = EnvironmentSettings.in_streaming_mode()
 table_env = TableEnvironment.create(env_settings)
 my_table = ...  # type: Table, table schema: [a: String]
 
@@ -302,7 +302,7 @@ class WeightedAvg(AggregateFunction):
             DataTypes.FIELD("f1", DataTypes.BIGINT())])
 
 
-env_settings = EnvironmentSettings.new_instance().use_blink_planner().is_streaming_mode().build()
+env_settings = EnvironmentSettings.in_streaming_mode()
 table_env = TableEnvironment.create(env_settings)
 # the result type and accumulator type can also be specified in the udaf decorator:
 # weighted_avg = udaf(WeightedAvg(), result_type=DataTypes.BIGINT(), accumulator_type=...)
@@ -404,7 +404,7 @@ Currently there are 2 limitations to use the ListView and MapView:
 1. The accumulator must be a `Row`.
 2. The `ListView` and `MapView` must be the first level children of the `Row` accumulator.
 
-Please refer to the [documentation of the corresponding classes]({{ site.pythondocs_baseurl }}/api/python/pyflink.table.html#pyflink.table.ListView) for more information about this advanced feature.
+Please refer to the {{< pythondoc file="pyflink.table.html#pyflink.table.ListView" name="documentation of the corresponding classes">}} for more information about this advanced feature.
 
 **NOTE:** For reducing the data transmission cost between Python UDF worker and Java process caused by accessing the data in Flink states(e.g. accumulators and data views), 
 there is a cached layer between the raw state handler and the Python state backend. You can adjust the values of these configuration options to change the behavior of the cache layer for best performance:
@@ -430,7 +430,7 @@ the function is called to compute and return the final result.
 
 The following example illustrates the aggregation process:
 
-<img alt="UDTAGG mechanism" src="/fig/udtagg-mechanism-python.png" width="80%">
+{{<img alt="UDTAGG mechanism" src="/fig/udtagg-mechanism-python.png" width="80%">}}
 
 In the example, we assume a table that contains data about beverages. The table consists of three columns (`id`, `name`,
 and `price`) and 5 rows. We would like to find the 2 highest prices of all beverages in the table, i.e.,
@@ -477,7 +477,7 @@ class Top2(TableAggregateFunction):
             [DataTypes.FIELD("a", DataTypes.BIGINT())])
 
 
-env_settings = EnvironmentSettings.new_instance().use_blink_planner().in_streaming_mode().build()
+env_settings = EnvironmentSettings.in_streaming_mode()
 table_env = TableEnvironment.create(env_settings)
 # the result type and accumulator type can also be specified in the udtaf decorator:
 # top2 = udtaf(Top2(), result_type=DataTypes.ROW([DataTypes.FIELD("a", DataTypes.BIGINT())]), accumulator_type=DataTypes.ARRAY(DataTypes.BIGINT()))
@@ -552,8 +552,3 @@ class ListViewConcatTableAggregateFunction(TableAggregateFunction):
     def get_result_type(self):
         return DataTypes.ROW([DataTypes.FIELD("a", DataTypes.STRING())])
 ```
-
-## Bundling UDFs
-
-To run Python UDFs (as well as Pandas UDFs) in any non-local mode, it is strongly recommended to bundle your Python UDF definitions using the config option [`python-files`]({{< ref "docs/dev/python/python_config" >}}#python-files), if your Python UDFs live outside of the file where the `main()` function is defined.
-Otherwise, you may run into `ModuleNotFoundError: No module named 'my_udf'` if you define Python UDFs in a file called `my_udf.py`.

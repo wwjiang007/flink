@@ -24,7 +24,6 @@ import org.apache.flink.runtime.clusterframework.types.AllocationID;
 import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.clusterframework.types.ResourceProfile;
 import org.apache.flink.runtime.clusterframework.types.SlotID;
-import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.instance.InstanceID;
 import org.apache.flink.runtime.messages.Acknowledge;
 import org.apache.flink.runtime.resourcemanager.ResourceManagerId;
@@ -33,6 +32,7 @@ import org.apache.flink.runtime.taskexecutor.SlotStatus;
 import org.apache.flink.runtime.taskexecutor.TaskExecutorGateway;
 import org.apache.flink.runtime.taskexecutor.exceptions.SlotOccupiedException;
 import org.apache.flink.util.Preconditions;
+import org.apache.flink.util.concurrent.FutureUtils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -109,7 +109,7 @@ public class DefaultSlotStatusSyncer implements SlotStatusSyncer {
                 taskManager.get().getTaskExecutorConnection().getTaskExecutorGateway();
         final ResourceID resourceId = taskManager.get().getTaskExecutorConnection().getResourceID();
 
-        LOG.debug(
+        LOG.info(
                 "Starting allocation of slot {} from {} for job {} with resource profile {}.",
                 allocationId,
                 resourceId,
@@ -198,7 +198,7 @@ public class DefaultSlotStatusSyncer implements SlotStatusSyncer {
     public void freeSlot(AllocationID allocationId) {
         Preconditions.checkNotNull(allocationId);
         checkStarted();
-        LOG.debug("Freeing slot {}.", allocationId);
+        LOG.info("Freeing slot {}.", allocationId);
 
         final Optional<TaskManagerSlotInformation> slotOptional =
                 taskManagerTracker.getAllocatedOrPendingSlot(allocationId);
@@ -250,6 +250,7 @@ public class DefaultSlotStatusSyncer implements SlotStatusSyncer {
             // the next slot report or the acknowledgement of the allocation request.
             if (!reportedAllocationIds.contains(slot.getAllocationId())
                     && slot.getState() == SlotState.ALLOCATED) {
+                LOG.info("Freeing slot {} by slot report.", slot.getAllocationId());
                 taskManagerTracker.notifySlotStatus(
                         slot.getAllocationId(),
                         slot.getJobId(),

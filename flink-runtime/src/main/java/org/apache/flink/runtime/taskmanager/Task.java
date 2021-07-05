@@ -28,6 +28,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.core.fs.FileSystemSafetyNet;
 import org.apache.flink.core.fs.Path;
+import org.apache.flink.core.security.FlinkSecurityManager;
 import org.apache.flink.runtime.accumulators.AccumulatorRegistry;
 import org.apache.flink.runtime.blob.PermanentBlobKey;
 import org.apache.flink.runtime.broadcast.BroadcastVariableManager;
@@ -36,7 +37,6 @@ import org.apache.flink.runtime.checkpoint.CheckpointFailureReason;
 import org.apache.flink.runtime.checkpoint.CheckpointMetaData;
 import org.apache.flink.runtime.checkpoint.CheckpointOptions;
 import org.apache.flink.runtime.clusterframework.types.AllocationID;
-import org.apache.flink.runtime.concurrent.FutureUtils;
 import org.apache.flink.runtime.deployment.InputGateDeploymentDescriptor;
 import org.apache.flink.runtime.deployment.ResultPartitionDeploymentDescriptor;
 import org.apache.flink.runtime.execution.CancelTaskException;
@@ -68,7 +68,6 @@ import org.apache.flink.runtime.metrics.groups.TaskMetricGroup;
 import org.apache.flink.runtime.operators.coordination.OperatorEvent;
 import org.apache.flink.runtime.operators.coordination.TaskNotRunningException;
 import org.apache.flink.runtime.query.TaskKvStateRegistry;
-import org.apache.flink.runtime.security.FlinkSecurityManager;
 import org.apache.flink.runtime.shuffle.ShuffleEnvironment;
 import org.apache.flink.runtime.shuffle.ShuffleIOOwnerContext;
 import org.apache.flink.runtime.state.TaskStateManager;
@@ -76,9 +75,9 @@ import org.apache.flink.runtime.taskexecutor.GlobalAggregateManager;
 import org.apache.flink.runtime.taskexecutor.KvStateService;
 import org.apache.flink.runtime.taskexecutor.PartitionProducerStateChecker;
 import org.apache.flink.runtime.taskexecutor.slot.TaskSlotPayload;
-import org.apache.flink.runtime.util.FatalExitExceptionHandler;
 import org.apache.flink.types.Either;
 import org.apache.flink.util.ExceptionUtils;
+import org.apache.flink.util.FatalExitExceptionHandler;
 import org.apache.flink.util.FlinkException;
 import org.apache.flink.util.FlinkRuntimeException;
 import org.apache.flink.util.Preconditions;
@@ -86,6 +85,7 @@ import org.apache.flink.util.SerializedValue;
 import org.apache.flink.util.TaskManagerExceptionUtils;
 import org.apache.flink.util.UserCodeClassLoader;
 import org.apache.flink.util.WrappingRuntimeException;
+import org.apache.flink.util.concurrent.FutureUtils;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -102,9 +102,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Consumer;
@@ -1173,6 +1176,10 @@ public class Task
                                 new TaskCanceler(
                                         LOG,
                                         this::closeNetworkResources,
+                                        taskCancellationTimeout > 0
+                                                ? taskCancellationTimeout
+                                                : TaskManagerOptions.TASK_CANCELLATION_TIMEOUT
+                                                        .defaultValue(),
                                         invokable,
                                         executingThread,
                                         taskNameWithSubtask);
@@ -1404,11 +1411,12 @@ public class Task
     public void deliverOperatorEvent(OperatorID operator, SerializedValue<OperatorEvent> evt)
             throws FlinkException {
         final AbstractInvokable invokable = this.invokable;
+        final ExecutionState currentState = this.executionState;
 
         if (invokable == null
-                || (executionState != ExecutionState.RUNNING
-                        && executionState != ExecutionState.INITIALIZING)) {
-            throw new TaskNotRunningException("Task is not yet running.");
+                || (currentState != ExecutionState.RUNNING
+                        && currentState != ExecutionState.INITIALIZING)) {
+            throw new TaskNotRunningException("Task is not running, but in state " + currentState);
         }
 
         try {
@@ -1550,6 +1558,9 @@ public class Task
 
         private final Logger logger;
         private final Runnable networkResourcesCloser;
+        /** Time to wait after cancellation and interruption before releasing network resources. */
+        private final long taskCancellationTimeout;
+
         private final AbstractInvokable invokable;
         private final Thread executer;
         private final String taskName;
@@ -1557,11 +1568,13 @@ public class Task
         TaskCanceler(
                 Logger logger,
                 Runnable networkResourcesCloser,
+                long taskCancellationTimeout,
                 AbstractInvokable invokable,
                 Thread executer,
                 String taskName) {
             this.logger = logger;
             this.networkResourcesCloser = networkResourcesCloser;
+            this.taskCancellationTimeout = taskCancellationTimeout;
             this.invokable = invokable;
             this.executer = executer;
             this.taskName = taskName;
@@ -1573,7 +1586,17 @@ public class Task
                 // the user-defined cancel method may throw errors.
                 // we need do continue despite that
                 try {
-                    invokable.cancel();
+                    Future<Void> cancellationFuture = invokable.cancel();
+                    // Wait for any active actions to complete (e.g. timers, mailbox actions)
+                    // Before that, interrupt to notify them about cancellation
+                    if (invokable.shouldInterruptOnCancel()) {
+                        executer.interrupt();
+                    }
+                    try {
+                        cancellationFuture.get(taskCancellationTimeout, TimeUnit.MILLISECONDS);
+                    } catch (ExecutionException | TimeoutException | InterruptedException e) {
+                        logger.debug("Error while waiting the task to terminate {}.", taskName, e);
+                    }
                 } catch (Throwable t) {
                     ExceptionUtils.rethrowIfFatalError(t);
                     logger.error("Error while canceling the task {}.", taskName, t);
@@ -1583,15 +1606,8 @@ public class Task
                 // in order to unblock async Threads, which produce/consume the
                 // intermediate streams outside of the main Task Thread (like
                 // the Kafka consumer).
-                //
-                // Don't do this before cancelling the invokable. Otherwise we
-                // will get misleading errors in the logs.
                 networkResourcesCloser.run();
 
-                // send the initial interruption signal, if requested
-                if (invokable.shouldInterruptOnCancel()) {
-                    executer.interrupt();
-                }
             } catch (Throwable t) {
                 ExceptionUtils.rethrowIfFatalError(t);
                 logger.error("Error in the task canceler for task {}.", taskName, t);

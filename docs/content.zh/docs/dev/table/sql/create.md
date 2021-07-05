@@ -92,8 +92,7 @@ tableEnv.executeSql(
 {{< /tab >}}
 {{< tab "Scala" >}}
 ```scala
-val settings = EnvironmentSettings.newInstance()...
-val tableEnv = TableEnvironment.create(settings)
+val tableEnv = TableEnvironment.create(...)
 
 // 对已注册的表进行 SQL 查询
 // 注册名为 “Orders” 的表
@@ -112,8 +111,7 @@ tableEnv.executeSql(
 {{< /tab >}}
 {{< tab "Python" >}}
 ```python
-settings = EnvironmentSettings.new_instance()...
-table_env = TableEnvironment.create(settings)
+table_env = TableEnvironment.create(...)
 
 # 对已经注册的表进行 SQL 查询
 # 注册名为 “Orders” 的表
@@ -575,7 +573,7 @@ CREATE [TEMPORARY] VIEW [IF NOT EXISTS] [catalog_name.][db_name.]view_name
 {{< top >}}
 
 ## CREATE FUNCTION
-{% highlight sql%}
+```sql
 CREATE [TEMPORARY|TEMPORARY SYSTEM] FUNCTION
   [IF NOT EXISTS] [[catalog_name.]db_name.]function_name
   AS identifier [LANGUAGE JAVA|SCALA|PYTHON]
@@ -587,7 +585,7 @@ CREATE [TEMPORARY|TEMPORARY SYSTEM] FUNCTION
 
 如果 language tag 是 PYTHON，则 identifier 是 UDF 对象的全限定名，例如 `pyflink.table.tests.test_udf.add`。关于 PYTHON UDF 的实现，请参考 [Python UDFs]({{< ref "docs/dev/python/table/udfs/python_udfs" >}})。
 
-如果 language tag 是 PYTHON，而当前程序是 Java／Scala 程序或者纯 SQL 程序，则需要[配置 Python 相关的依赖]({{< ref "docs/dev/python/table/dependency_management" >}}#python-dependency-in-javascala-program)。
+如果 language tag 是 PYTHON，而当前程序是 Java／Scala 程序或者纯 SQL 程序，则需要[配置 Python 相关的依赖]({{< ref "docs/dev/python/dependency_management" >}}#python-dependency-in-javascala-program)。
 
 **TEMPORARY**
 

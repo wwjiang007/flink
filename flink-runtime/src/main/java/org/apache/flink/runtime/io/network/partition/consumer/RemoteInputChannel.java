@@ -222,6 +222,13 @@ public class RemoteInputChannel extends InputChannel {
             return Optional.empty();
         }
 
+        NetworkActionsLogger.traceInput(
+                "RemoteInputChannel#getNextBuffer",
+                next.buffer,
+                inputGate.getOwningTaskName(),
+                channelInfo,
+                channelStatePersister,
+                next.sequenceNumber);
         numBytesIn.inc(next.buffer.getSize());
         numBuffersIn.inc();
         return Optional.of(
@@ -355,6 +362,14 @@ public class RemoteInputChannel extends InputChannel {
         partitionRequestClient.resumeConsumption(this);
     }
 
+    @Override
+    public void acknowledgeAllRecordsProcessed() throws IOException {
+        checkState(!isReleased.get(), "Channel released.");
+        checkPartitionRequestQueueInitialized();
+
+        partitionRequestClient.acknowledgeAllRecordsProcessed(this);
+    }
+
     // ------------------------------------------------------------------------
     // Network I/O notifications (called by network I/O thread)
     // ------------------------------------------------------------------------
@@ -443,6 +458,10 @@ public class RemoteInputChannel extends InputChannel {
         }
     }
 
+    /**
+     * Handles the input buffer. This method is taking over the ownership of the buffer and is fully
+     * responsible for cleaning it up both on the happy path and in case of an error.
+     */
     public void onBuffer(Buffer buffer, int sequenceNumber, int backlog) throws IOException {
         boolean recycleBuffer = true;
 

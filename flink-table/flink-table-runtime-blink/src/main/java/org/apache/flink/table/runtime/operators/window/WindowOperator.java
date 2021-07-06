@@ -44,6 +44,7 @@ import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.util.RowDataUtil;
 import org.apache.flink.table.runtime.dataview.PerWindowStateDataViewStore;
 import org.apache.flink.table.runtime.generated.NamespaceAggsHandleFunctionBase;
+import org.apache.flink.table.runtime.operators.aggregate.RecordCounter;
 import org.apache.flink.table.runtime.operators.window.assigners.MergingWindowAssigner;
 import org.apache.flink.table.runtime.operators.window.assigners.PanedWindowAssigner;
 import org.apache.flink.table.runtime.operators.window.assigners.WindowAssigner;
@@ -143,6 +144,9 @@ public abstract class WindowOperator<K, W extends Window> extends AbstractStream
      */
     private final long allowedLateness;
 
+    /** Used to count the number of added and retracted input records. */
+    protected final RecordCounter recordCounter;
+
     // --------------------------------------------------------------------------------
 
     protected NamespaceAggsHandleFunctionBase<W> windowAggregator;
@@ -153,9 +157,6 @@ public abstract class WindowOperator<K, W extends Window> extends AbstractStream
 
     /** This is used for emitting elements with a given timestamp. */
     protected transient TimestampedCollector<RowData> collector;
-
-    /** Flag to prevent duplicate function.close() calls in close() and dispose(). */
-    private transient boolean functionsClosed = false;
 
     private transient InternalTimerService<W> internalTimerService;
 
@@ -185,7 +186,8 @@ public abstract class WindowOperator<K, W extends Window> extends AbstractStream
             int rowtimeIndex,
             boolean produceUpdates,
             long allowedLateness,
-            ZoneId shiftTimeZone) {
+            ZoneId shiftTimeZone,
+            int inputCountIndex) {
         checkArgument(allowedLateness >= 0);
         this.windowAggregator = checkNotNull(windowAggregator);
         this.windowAssigner = checkNotNull(windowAssigner);
@@ -202,6 +204,8 @@ public abstract class WindowOperator<K, W extends Window> extends AbstractStream
         checkArgument(!windowAssigner.isEventTime() || rowtimeIndex >= 0);
         this.rowtimeIndex = rowtimeIndex;
         this.shiftTimeZone = shiftTimeZone;
+        this.recordCounter = RecordCounter.of(inputCountIndex);
+
         setChainingStrategy(ChainingStrategy.ALWAYS);
     }
 
@@ -216,7 +220,8 @@ public abstract class WindowOperator<K, W extends Window> extends AbstractStream
             int rowtimeIndex,
             boolean produceUpdates,
             long allowedLateness,
-            ZoneId shiftTimeZone) {
+            ZoneId shiftTimeZone,
+            int inputCountIndex) {
         checkArgument(allowedLateness >= 0);
         this.windowAssigner = checkNotNull(windowAssigner);
         this.trigger = checkNotNull(trigger);
@@ -232,6 +237,7 @@ public abstract class WindowOperator<K, W extends Window> extends AbstractStream
         checkArgument(!windowAssigner.isEventTime() || rowtimeIndex >= 0);
         this.rowtimeIndex = rowtimeIndex;
         this.shiftTimeZone = shiftTimeZone;
+        this.recordCounter = RecordCounter.of(inputCountIndex);
 
         setChainingStrategy(ChainingStrategy.ALWAYS);
     }
@@ -241,8 +247,6 @@ public abstract class WindowOperator<K, W extends Window> extends AbstractStream
     @Override
     public void open() throws Exception {
         super.open();
-
-        functionsClosed = false;
 
         collector = new TimestampedCollector<>(output);
         collector.eraseTimestamp();
@@ -318,22 +322,8 @@ public abstract class WindowOperator<K, W extends Window> extends AbstractStream
         super.close();
         collector = null;
         triggerContext = null;
-        functionsClosed = true;
         if (windowAggregator != null) {
             windowAggregator.close();
-        }
-    }
-
-    @Override
-    public void dispose() throws Exception {
-        super.dispose();
-        collector = null;
-        triggerContext = null;
-        if (!functionsClosed) {
-            functionsClosed = true;
-            if (windowAggregator != null) {
-                windowAggregator.close();
-            }
         }
     }
 
@@ -407,10 +397,6 @@ public abstract class WindowOperator<K, W extends Window> extends AbstractStream
 
     @Override
     public void onProcessingTime(InternalTimer<K, W> timer) throws Exception {
-        if (functionsClosed) {
-            return;
-        }
-
         setCurrentKey(timer.getKey());
 
         triggerContext.window = timer.getNamespace();
